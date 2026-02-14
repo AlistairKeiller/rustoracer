@@ -29,7 +29,7 @@ impl RosBridge {
 
         self.sim.reset(&poses);
 
-        let mut cmds: Vec<Arc<Mutex<[f64; 2]>>> = Vec::new(); // [steer_angle_des, speed_des]
+        let mut cmds: Vec<Arc<Mutex<[f64; 2]>>> = Vec::new();
         let mut scan_pubs = Vec::new();
         let mut odom_pubs = Vec::new();
 
@@ -47,7 +47,6 @@ impl RosBridge {
                 }
             };
 
-            // --- drive subscriber ---
             let cmd: Arc<Mutex<[f64; 2]>> = Arc::new(Mutex::new([0.0; 2]));
             let cmd_c = cmd.clone();
             let mut sub = node.subscribe::<AckDrive>(&t("drive"), qos.clone())?;
@@ -59,7 +58,6 @@ impl RosBridge {
             });
             cmds.push(cmd);
 
-            // --- publishers ---
             scan_pubs.push(node.create_publisher::<LaserScan>(&t("scan"), qos.clone())?);
             odom_pubs.push(node.create_publisher::<Odom>(&t("odom"), qos.clone())?);
         }
@@ -71,7 +69,6 @@ impl RosBridge {
             interval.tick().await;
             node.spin_once(Duration::ZERO);
 
-            // P-control: Ackermann targets → [steer_vel, accel]
             let actions: Vec<[f64; 2]> = (0..n)
                 .map(|i| {
                     let [st_d, v_d] = *cmds[i].lock().unwrap();
@@ -91,7 +88,7 @@ impl RosBridge {
                 let [x, y, th] = obs.poses[i];
                 let v = self.sim.cars[i].velocity;
                 let frame = if n == 1 {
-                    "ego".into()
+                    "base_footprint".into()
                 } else {
                     format!("agent{i}")
                 };
@@ -99,7 +96,7 @@ impl RosBridge {
                 scan_pubs[i].publish(&build_scan(&obs.scans[i], &stamp, &frame, &self.sim))?;
                 odom_pubs[i].publish(&build_odom(x, y, th, v, &stamp, &frame))?;
 
-                tfs.push(build_tf(x, y, th, &stamp, "map", &frame));
+                tfs.push(build_tf(x, y, th, &stamp, "odom", &frame));
                 tfs.push(build_tf(
                     0.0,
                     0.0,
@@ -117,8 +114,6 @@ impl RosBridge {
         }
     }
 }
-
-// ── message builders ────────────────────────────────────────────────────────
 
 fn now() -> Stamp {
     let d = std::time::SystemTime::now()
@@ -162,7 +157,7 @@ fn build_scan(ranges: &[f64], stamp: &Stamp, frame: &str, sim: &Sim) -> LaserSca
 fn build_odom(x: f64, y: f64, th: f64, v: f64, stamp: &Stamp, child: &str) -> Odom {
     use r2r::geometry_msgs::msg::*;
     Odom {
-        header: hdr(stamp, "map"),
+        header: hdr(stamp, "odom"),
         child_frame_id: child.into(),
         pose: PoseWithCovariance {
             pose: Pose {
