@@ -86,7 +86,7 @@ class WallFollow(Node):
     def scan_callback(self, msg):
         print("test")
         
-        speed = 0.2
+        speed = 1.0
         steering = self.steering_pid.update(
             -get_distance_from_wall(np.array(msg.ranges)),
             msg.time_increment,
