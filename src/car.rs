@@ -118,23 +118,19 @@ impl Car {
         let lwb = p.lf + p.lr;
 
         if self.velocity.abs() < V_KINEMATIC_THRESHOLD {
-            // ── Kinematic bicycle model (reference point: center of gravity) ─
-
+            // ── Kinematic bicycle model ──
             let beta = (p.lr / lwb * self.steering.tan()).atan();
-
             let dx = self.velocity * (self.yaw + beta).cos();
             let dy = self.velocity * (self.yaw + beta).sin();
             let d_steering = sv;
             let d_velocity = acc;
             let d_yaw = self.velocity / lwb * self.steering.tan() * beta.cos();
 
-            // Derivative of slip angle w.r.t. time
             let tan_s = self.steering.tan();
             let cos_s = self.steering.cos();
             let d_beta =
-                (p.lr * sv) / (lwb * cos_s.powi(2) * (1.0 + (tan_s.powi(2) * p.lr / lwb).powi(2)));
+                (p.lr * sv) / (lwb * cos_s.powi(2) * (1.0 + tan_s.powi(2) * (p.lr / lwb).powi(2)));
 
-            // Yaw acceleration
             let d_yaw_rate = (1.0 / lwb)
                 * (acc * self.slip_angle.cos() * tan_s
                     - self.velocity * self.slip_angle.sin() * d_beta * tan_s
@@ -150,8 +146,7 @@ impl Car {
                 d_slip_angle: d_beta,
             }
         } else {
-            // ── Dynamic single-track model ──────────────────────────────────
-
+            // ── Dynamic single-track model ──
             let v = self.velocity;
             let mu = p.mu;
             let m = p.m;
@@ -161,33 +156,27 @@ impl Car {
             let c_sf = p.c_sf;
             let c_sr = p.c_sr;
 
-            // Normal-load factors (gravity ± load transfer from acceleration)
-            let fzf = (m * G * lr - m * acc * p.h) / lwb; // front
-            let fzr = (m * G * lf + m * acc * p.h) / lwb; // rear
+            let fzf = m * (G * lr - acc * p.h) / lwb;
+            let fzr = m * (G * lf + acc * p.h) / lwb;
 
-            // Position
             let dx = v * (self.slip_angle + self.yaw).cos();
             let dy = v * (self.slip_angle + self.yaw).sin();
-
-            // Steering & velocity directly from constrained inputs
             let d_steering = sv;
             let d_velocity = acc;
-
-            // Yaw
             let d_yaw = self.yaw_rate;
 
-            // Yaw rate (moment balance)
-            let d_yaw_rate = -mu * m / (v * iz * lwb)
-                * (lf.powi(2) * c_sf * fzf + lr.powi(2) * c_sr * fzr)
-                * self.yaw_rate
+            // Yaw rate
+            let d_yaw_rate = mu * m / (iz * lwb) * lf * c_sf * fzf * self.steering
                 + mu * m / (iz * lwb) * (lr * c_sr * fzr - lf * c_sf * fzf) * self.slip_angle
-                + mu * m / (iz * lwb) * lf * c_sf * fzf * self.steering;
+                - mu * m / (v * iz * lwb)
+                    * (lf.powi(2) * c_sf * fzf + lr.powi(2) * c_sr * fzr)
+                    * self.yaw_rate;
 
-            // Slip-angle rate (lateral force balance)
-            let d_slip_angle = (mu / (v.powi(2) * lwb) * (c_sr * fzr * lr - c_sf * fzf * lf) - 1.0)
-                * self.yaw_rate
+            // Slip angle rate
+            let d_slip_angle = mu / (v * lwb) * c_sf * fzf * self.steering
                 - mu / (v * lwb) * (c_sr * fzr + c_sf * fzf) * self.slip_angle
-                + mu / (v * lwb) * c_sf * fzf * self.steering;
+                + (mu / (v.powi(2) * lwb) * (c_sr * fzr * lr - c_sf * fzf * lf) - 1.0)
+                    * self.yaw_rate;
 
             StateDerivatives {
                 dx,
