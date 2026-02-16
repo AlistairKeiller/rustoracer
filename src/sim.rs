@@ -24,11 +24,9 @@ impl Sim {
                 Car {
                     x: 0.0,
                     y: 0.0,
-                    steering: 0.0,
+                    theta: 0.0,
                     velocity: 0.0,
-                    yaw: 0.0,
-                    yaw_rate: 0.0,
-                    slip_angle: 0.0,
+                    steering: 0.0
                 };
                 n
             ],
@@ -44,11 +42,9 @@ impl Sim {
             *c = Car {
                 x: p[0],
                 y: p[1],
-                steering: 0.0,
+                theta: p[2],
                 velocity: 0.0,
-                yaw: p[2],
-                yaw_rate: 0.0,
-                slip_angle: 0.0,
+                steering: 0.0,
             };
         }
         self.observe()
@@ -73,13 +69,13 @@ impl Sim {
                 (0..nb)
                     .into_iter()
                     .map(|i| {
-                        let ang = c.yaw - fov / 2.0 + fov * i as f64 / (nb - 1) as f64;
+                        let ang = c.theta - fov / 2.0 + fov * i as f64 / (nb - 1) as f64;
                         self.map.raycast(c.x, c.y, ang, mr)
                     })
                     .collect()
             })
             .collect();
-        let poses = self.cars.iter().map(|c| [c.x, c.y, c.yaw]).collect();
+        let poses = self.cars.iter().map(|c| [c.x, c.y, c.theta]).collect();
         Obs { scans, poses }
     }
 }
