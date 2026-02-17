@@ -1,9 +1,12 @@
+use std::f64::consts::PI;
+
 use crate::car::Car;
 use crate::map::OccGrid;
 
 pub struct Obs {
     pub scans: Vec<Vec<f64>>,
     pub poses: Vec<[f64; 3]>,
+    pub cols: Vec<bool>,
 }
 
 pub struct Sim {
@@ -30,8 +33,8 @@ impl Sim {
                 n
             ],
             dt: 0.01,
-            n_beams: 1080,
-            fov: 4.7,
+            n_beams: 1081,
+            fov: 270.0 * PI / 180.0,
             max_range: 30.0,
         }
     }
@@ -47,16 +50,11 @@ impl Sim {
         }
         self.observe()
     }
-    pub fn step(&mut self, actions: &[[f64; 2]]) -> (Obs, Vec<bool>) {
+    pub fn step(&mut self, actions: &[[f64; 2]]) -> Obs {
         for (c, a) in self.cars.iter_mut().zip(actions) {
             c.step(a[0], a[1], self.dt);
         }
-        let cols = self
-            .cars
-            .iter()
-            .map(|c| self.map.occupied(c.x, c.y))
-            .collect();
-        (self.observe(), cols)
+        self.observe()
     }
     pub fn observe(&self) -> Obs {
         let (nb, fov, mr) = (self.n_beams, self.fov, self.max_range);
@@ -67,13 +65,22 @@ impl Sim {
                 (0..nb)
                     .into_iter()
                     .map(|i| {
-                        let ang = c.theta - fov / 2.0 + fov * i as f64 / (nb - 1) as f64;
-                        self.map.raycast(c.x, c.y, ang, mr)
+                        self.map.raycast(
+                            c.x,
+                            c.y,
+                            c.theta - fov / 2.0 + fov * i as f64 / (nb - 1) as f64,
+                            mr,
+                        )
                     })
                     .collect()
             })
             .collect();
         let poses = self.cars.iter().map(|c| [c.x, c.y, c.theta]).collect();
-        Obs { scans, poses }
+        let cols = self
+            .cars
+            .iter()
+            .map(|c| self.map.occupied(c.x, c.y))
+            .collect();
+        Obs { scans, poses, cols }
     }
 }
