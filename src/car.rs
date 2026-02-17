@@ -57,7 +57,7 @@ fn bicycle_dynamics(s: &State, accel: f64, steer_vel: f64) -> State {
     ]
 }
 
-fn pid(speed: f64, steer: f64, current_speed: f64, current_steer: f64) -> (f64, f64) {
+fn pid(steer: f64, speed: f64, current_speed: f64, current_steer: f64) -> (f64, f64) {
     let steer_diff = steer - current_steer;
     let sv = if steer_diff.abs() > 1e-4 {
         steer_diff.signum() * STEERING_VELOCITY_MAX
