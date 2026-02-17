@@ -30,16 +30,45 @@ pub struct Car {
     pub steering: f64,
 }
 
+type State = [f64; 5]; // [x, y, θ, v, δ]
+
+fn add_scaled(base: &State, delta: &State, h: f64) -> State {
+    std::array::from_fn(|i| base[i] + delta[i] * h)
+}
+
+fn rk4(y: &State, dt: f64, f: impl Fn(&State) -> State) -> State {
+    let k1 = f(y);
+    let k2 = f(&add_scaled(y, &k1, dt / 2.0));
+    let k3 = f(&add_scaled(y, &k2, dt / 2.0));
+    let k4 = f(&add_scaled(y, &k3, dt));
+    std::array::from_fn(|i| y[i] + dt / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]))
+}
+
+fn bicycle_dynamics(s: &State, accel: f64, steer_vel: f64) -> State {
+    let [_, _, theta, v, steering] = *s;
+    let beta = (LENGTH_REAR / LENGTH_WHEELBASE * steering.tan()).atan();
+    let heading = theta + beta;
+    [
+        v * heading.cos(),            // ẋ
+        v * heading.sin(),            // ẏ
+        v / LENGTH_REAR * beta.sin(), // θ̇
+        accel,                        // v̇
+        steer_vel,                    // δ̇
+    ]
+}
+
 impl Car {
     pub fn step(&mut self, steer_vel: f64, accel: f64, dt: f64) {
         let a = accel.clamp(A_MIN, A_MAX);
         let sv = steer_vel.clamp(STEERING_VELOCITY_MIN, STEERING_VELOCITY_MAX);
-        let beta = (LENGTH_REAR / LENGTH_WHEELBASE * self.steering.tan()).atan();
-        let heading = self.theta + beta;
-        self.x += self.velocity * heading.cos() * dt;
-        self.y += self.velocity * heading.sin() * dt;
-        self.theta += self.velocity / LENGTH_REAR * beta.sin() * dt;
-        self.velocity = (self.velocity + a * dt).clamp(V_MIN, V_MAX);
-        self.steering = (self.steering + sv * dt).clamp(STEERING_MIN, STEERING_MAX);
+
+        let state = [self.x, self.y, self.theta, self.velocity, self.steering];
+        let [x, y, theta, v, steer] = rk4(&state, dt, |s| bicycle_dynamics(s, a, sv));
+
+        self.x = x;
+        self.y = y;
+        self.theta = theta;
+        self.velocity = v.clamp(V_MIN, V_MAX);
+        self.steering = steer.clamp(STEERING_MIN, STEERING_MAX);
     }
 }
