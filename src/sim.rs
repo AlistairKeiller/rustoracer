@@ -1,4 +1,4 @@
-use crate::car::{Car, Params};
+use crate::car::Car;
 use crate::map::OccGrid;
 
 pub struct Obs {
@@ -9,7 +9,6 @@ pub struct Obs {
 pub struct Sim {
     pub map: OccGrid,
     pub cars: Vec<Car>,
-    pub params: Params,
     pub dt: f64,
     pub n_beams: usize,
     pub fov: f64,
@@ -30,7 +29,6 @@ impl Sim {
                 };
                 n
             ],
-            params: Params::default(),
             dt: 0.01,
             n_beams: 1080,
             fov: 4.7,
@@ -51,7 +49,7 @@ impl Sim {
     }
     pub fn step(&mut self, actions: &[[f64; 2]]) -> (Obs, Vec<bool>) {
         for (c, a) in self.cars.iter_mut().zip(actions) {
-            c.step(a[0], a[1], self.dt, &self.params);
+            c.step(a[0], a[1], self.dt);
         }
         let cols = self
             .cars
