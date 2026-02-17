@@ -1,0 +1,21 @@
+[build-system]
+requires = ["maturin>=1.12,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "rustoracer"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+dependencies = []
+
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "rust/Cargo.toml" },
+    { file = "**/*.rs" },
+]
