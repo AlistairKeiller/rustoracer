@@ -57,18 +57,45 @@ fn bicycle_dynamics(s: &State, accel: f64, steer_vel: f64) -> State {
     ]
 }
 
+fn pid(speed: f64, steer: f64, current_speed: f64, current_steer: f64) -> (f64, f64) {
+    let steer_diff = steer - current_steer;
+    let sv = if steer_diff.abs() > 1e-4 {
+        steer_diff.signum() * STEERING_VELOCITY_MAX
+    } else {
+        0.0
+    };
+
+    let vel_diff = speed - current_speed;
+    let kp = if current_speed > 0.0 {
+        if vel_diff > 0.0 {
+            10.0 * A_MAX / V_MAX
+        } else {
+            10.0 * A_MAX / -V_MIN
+        }
+    } else {
+        if vel_diff > 0.0 {
+            2.0 * A_MAX / V_MAX
+        } else {
+            2.0 * A_MAX / -V_MIN
+        }
+    };
+
+    (kp * vel_diff, sv)
+}
+
 impl Car {
-    pub fn step(&mut self, steer_vel: f64, accel: f64, dt: f64) {
+    pub fn step(&mut self, steer: f64, speed: f64, dt: f64) {
+        let (accel, steer_vel) = pid(steer, speed, self.velocity, self.steering);
         let a = accel.clamp(A_MIN, A_MAX);
         let sv = steer_vel.clamp(STEERING_VELOCITY_MIN, STEERING_VELOCITY_MAX);
 
         let state = [self.x, self.y, self.theta, self.velocity, self.steering];
-        let [x, y, theta, v, steer] = rk4(&state, dt, |s| bicycle_dynamics(s, a, sv));
+        let [x, y, theta, v, s] = rk4(&state, dt, |s| bicycle_dynamics(s, a, sv));
 
         self.x = x;
         self.y = y;
         self.theta = theta;
         self.velocity = v.clamp(V_MIN, V_MAX);
-        self.steering = steer.clamp(STEERING_MIN, STEERING_MAX);
+        self.steering = s.clamp(STEERING_MIN, STEERING_MAX);
     }
 }

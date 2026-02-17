@@ -12,9 +12,6 @@ type TFS = r2r::geometry_msgs::msg::TransformStamped;
 type Header = r2r::std_msgs::msg::Header;
 type Stamp = r2r::builtin_interfaces::msg::Time;
 
-const KP_STEER: f64 = 8.0;
-const KP_SPEED: f64 = 8.0;
-
 pub struct RosBridge {
     pub sim: Sim,
     pub hz: f64,
@@ -53,7 +50,7 @@ impl RosBridge {
             tokio::spawn(async move {
                 while let Some(msg) = sub.next().await {
                     *cmd_c.lock().unwrap() =
-                        [msg.drive.steering_angle as f64, msg.drive.speed as f64];
+                        [msg.drive.steering_angle as f64, msg.drive.speed as f64]
                 }
             });
             cmds.push(cmd);
@@ -69,18 +66,9 @@ impl RosBridge {
             interval.tick().await;
             node.spin_once(Duration::ZERO);
 
-            let actions: Vec<[f64; 2]> = (0..n)
-                .map(|i| {
-                    let [st_d, v_d] = *cmds[i].lock().unwrap();
-                    let car = &self.sim.cars[i];
-                    [
-                        KP_STEER * (st_d - car.steering),
-                        KP_SPEED * (v_d - car.velocity),
-                    ]
-                })
-                .collect();
+            let actions: Vec<[f64; 2]> = (0..n).map(|i| *cmds[i].lock().unwrap()).collect();
 
-            let (obs, cols) = self.sim.step(&actions);
+            let obs = self.sim.step(&actions);
             let stamp = now();
 
             let mut tfs = Vec::new();
@@ -106,8 +94,8 @@ impl RosBridge {
                     &format!("{frame}/laser"),
                 ));
 
-                if cols[i] {
-                    r2r::log_warn!("f1tenth_sim", "{frame} collided at ({x:.2}, {y:.2})");
+                if obs.cols[i] {
+                    self.sim.reset_single(&[0.0, 0.0, 0.0], i);
                 }
             }
             tf_pub.publish(&TFMsg { transforms: tfs })?;
@@ -169,8 +157,8 @@ fn build_odom(x: f64, y: f64, th: f64, v: f64, stamp: &Stamp, child: &str) -> Od
         twist: TwistWithCovariance {
             twist: Twist {
                 linear: Vector3 {
-                    x: v * th.cos(),
-                    y: v * th.sin(),
+                    x: v,
+                    y: 0.0,
                     z: 0.0,
                 },
                 ..Default::default()

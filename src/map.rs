@@ -28,8 +28,8 @@ impl OccGrid {
         }
     }
     pub fn occupied(&self, wx: f64, wy: f64) -> bool {
-        let px = ((wx - self.ox) / self.res) as i32;
-        let py = self.img.height() as i32 - 1 - ((wy - self.oy) / self.res) as i32;
+        let px = ((wx - self.ox) / self.res).floor() as i32;
+        let py = self.img.height() as i32 - 1 - ((wy - self.oy) / self.res).floor() as i32;
         px < 0
             || py < 0
             || px >= self.img.width() as i32

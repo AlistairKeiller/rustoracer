@@ -1,10 +1,5 @@
 {
-    "rust-analyzer.cargo.features": [],
-    "settings": {
-        "[linux]": {
-            "rust-analyzer.cargo.features": [
-                "ros"
-            ]
-        }
-    }
+    "rust-analyzer.cargo.features": [
+        "ros"
+    ]
 }

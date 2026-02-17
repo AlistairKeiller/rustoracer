@@ -6,11 +6,6 @@ Rebuild and reopen in container
 cargo run --release --features ros
 ```
 ```bash
-cd autodrive_f1tenth && colcon build && cd ..
-source autodrive_f1tenth/install/setup.bash
-ros2 launch autodrive_f1tenth simulator_bringup_headless.launch.py
-```
-```bash
 ros2 launch foxglove_bridge foxglove_bridge_launch.xml
 ```
 ```bash
