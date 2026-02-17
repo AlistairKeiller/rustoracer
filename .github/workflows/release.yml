@@ -7,13 +7,44 @@ on:
       - v*
 
 jobs:
+  build-linux:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          args: --release --out dist
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Install Python 3.13
+        run: uv python install 3.13
+      - name: Smoke test (wheel)
+        run: uv run --isolated --no-project --with dist/*.whl --with gymnasium tests/smoke_test.py
+      - name: Build source distribution
+        run: uv build --sdist
+      - name: Smoke test (source distribution)
+        run: uv run --isolated --no-project --with dist/*.tar.gz --with gymnasium tests/smoke_test.py
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-ubuntu-latest
+          path: dist/*.whl
+      - name: Upload source distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [macos-latest, windows-latest]
     defaults:
       run:
         shell: bash
@@ -26,27 +57,17 @@ jobs:
         run: uv python install 3.13
       - name: Build
         run: uv build
-      # Check that basic features work and we didn't miss to include crucial files
       - name: Smoke test (wheel)
         run: uv run --isolated --no-project --with dist/*.whl --with gymnasium tests/smoke_test.py
-      - name: Smoke test (source distribution)
-        if: runner.os == 'Linux'
-        run: uv run --isolated --no-project --with dist/*.tar.gz --with gymnasium tests/smoke_test.py
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}
           path: dist/*.whl
-      - name: Upload source distribution
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdist
-          path: dist/*.tar.gz
 
   publish:
     name: Publish to PyPI
-    needs: build
+    needs: [build-linux, build]
     runs-on: ubuntu-latest
     environment:
       name: pypi
