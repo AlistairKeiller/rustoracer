@@ -19,7 +19,7 @@ class RustoracerEnv(gym.Env):
             0.0, self._sim.max_range, shape=(self._sim.n_beams,), dtype=np.float64
         )
         self.action_space = spaces.Box(
-            np.array([-0.4189, 0.0]), np.array([0.4189, 7.0]), dtype=np.float64
+            np.array([-0.4189, 0.4189]), np.array([0.0, 10.0]), dtype=np.float64
         )
 
     def reset(self, *, seed=None, options=None):
