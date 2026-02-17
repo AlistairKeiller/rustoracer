@@ -10,15 +10,12 @@ use crate::sim::Sim;
 #[cfg(not(feature = "ros"))]
 fn main() {
     let mut sim = Sim::new("maps/berlin.yaml", 1);
-    let _obs = sim.reset(&[[0.0, 0.0, 0.0]]);
     for _ in 0..1000 {
-        let (obs, col) = sim.step(&[[0.0, 1.0]]);
-        if col[0] {
-            println!(
-                "collision at ({:.2}, {:.2})",
-                obs.poses[0][0], obs.poses[0][1]
-            );
-            break;
+        let obs = sim.step(&[[0.0, 1.0]]);
+        for (crashed, i) in obs.cols.iter().zip(0..obs.cols.len()) {
+            if *crashed {
+                sim.reset_single(&[0.0, 0.0, 0.0], i);
+            }
         }
     }
 }

@@ -50,6 +50,15 @@ impl Sim {
         }
         self.observe()
     }
+    pub fn reset_single(&mut self, pose: &[f64; 3], i: usize) {
+        self.cars[i] = Car {
+            x: pose[0],
+            y: pose[1],
+            theta: pose[2],
+            velocity: 0.0,
+            steering: 0.0,
+        };
+    }
     pub fn step(&mut self, actions: &[[f64; 2]]) -> Obs {
         for (c, a) in self.cars.iter_mut().zip(actions) {
             c.step(a[0], a[1], self.dt);
