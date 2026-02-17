@@ -1,3 +1,26 @@
+// const G: f64 = 9.81;
+// const V_KINEMATIC_THRESHOLD: f64 = 0.1; // m/s
+// const MU: f64 = 1.0489;
+// const C_SF: f64 = 4.718;
+// const C_SR: f64 = 5.4562;
+const LENGTH_FRONT: f64 = 0.15875;
+const LENGTH_REAR: f64 = 0.17145;
+const LENGTH_WHEELBASE: f64 = LENGTH_FRONT + LENGTH_REAR;
+// const H: f64 = 0.074;
+// const MASS: f64 = 3.74;
+// const I_Z: f64 = 0.04712;
+const STEERING_MIN: f64 = -0.4189;
+const STEERING_MAX: f64 = 0.4189;
+const STEERING_VELOCITY_MIN: f64 = -3.2;
+const STEERING_VELOCITY_MAX: f64 = 3.2;
+// const V_SWITCH: f64 = 7.319;
+const A_MIN: f64 = -9.51;
+const A_MAX: f64 = 9.51;
+const V_MIN: f64 = -5.0;
+const V_MAX: f64 = 20.0;
+// const WIDTH: f64 = 0.31;
+// const LENGTH: f64 = 0.58;
+
 #[derive(Clone)]
 pub struct Car {
     pub x: f64,
@@ -7,37 +30,16 @@ pub struct Car {
     pub steering: f64,
 }
 
-pub struct Params {
-    length_front: f64,
-    length_rear: f64,
-    steering_velocity_max: f64,
-    a_max: f64,
-    steering_max: f64,
-    v_max: f64,
-}
-
-impl Default for Params {
-    fn default() -> Self {
-        Self {
-            length_front: 0.15875,
-            length_rear: 0.17145,
-            steering_velocity_max: 3.2,
-            a_max: 7.51,
-            steering_max: 0.4189,
-            v_max: 7.0,
-        }
-    }
-}
-
 impl Car {
-    pub fn step(&mut self, steer_vel: f64, accel: f64, dt: f64, p: &Params) {
-        let a = accel.clamp(-p.a_max, p.a_max);
-        let sv = steer_vel.clamp(-p.steering_velocity_max, p.steering_velocity_max);
-        let beta = (p.length_rear / (p.length_front + p.length_rear) * self.steering.tan()).atan();
-        self.x += self.velocity * (self.theta + beta).cos() * dt;
-        self.y += self.velocity * (self.theta + beta).sin() * dt;
-        self.theta += self.velocity / p.length_rear * beta.sin() * dt;
-        self.velocity = (self.velocity + a * dt).clamp(-p.v_max, p.v_max);
-        self.steering = (self.steering + sv * dt).clamp(-p.steering_max, p.steering_max);
+    pub fn step(&mut self, steer_vel: f64, accel: f64, dt: f64) {
+        let a = accel.clamp(A_MIN, A_MAX);
+        let sv = steer_vel.clamp(STEERING_VELOCITY_MIN, STEERING_VELOCITY_MAX);
+        let beta = (LENGTH_REAR / LENGTH_WHEELBASE * self.steering.tan()).atan();
+        let heading = self.theta + beta;
+        self.x += self.velocity * heading.cos() * dt;
+        self.y += self.velocity * heading.sin() * dt;
+        self.theta += self.velocity / LENGTH_REAR * beta.sin() * dt;
+        self.velocity = (self.velocity + a * dt).clamp(V_MIN, V_MAX);
+        self.steering = (self.steering + sv * dt).clamp(STEERING_MIN, STEERING_MAX);
     }
 }
