@@ -1,6 +1,7 @@
 mod car;
 mod map;
 mod python;
+mod render;
 mod sim;
 pub use python::*;
 

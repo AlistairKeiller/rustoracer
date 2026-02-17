@@ -1,4 +1,4 @@
-use numpy::PyArray1;
+use numpy::{IntoPyArray, PyArray1, PyArray3};
 use pyo3::prelude::*;
 
 use crate::Sim;
@@ -56,6 +56,13 @@ mod rustoracer {
         #[getter]
         fn max_range(&self) -> f64 {
             self.sim.max_range
+        }
+
+        fn render<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray3<u8>> {
+            let (buf, h, w) = crate::render::render_rgb(&self.sim.map, &self.sim.cars);
+            numpy::ndarray::Array3::from_shape_vec((h as usize, w as usize, 3), buf)
+                .unwrap()
+                .into_pyarray(py)
         }
     }
 }

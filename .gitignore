@@ -17,3 +17,6 @@ flake.lock
 # ROS generated files
 install
 log
+
+*.so
+*.zip

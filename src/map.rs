@@ -9,10 +9,10 @@ struct MapMeta {
 }
 
 pub struct OccGrid {
-    img: GrayImage,
-    res: f64,
-    ox: f64,
-    oy: f64,
+    pub img: GrayImage,
+    pub res: f64,
+    pub ox: f64,
+    pub oy: f64,
 }
 
 impl OccGrid {
