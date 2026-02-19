@@ -39,12 +39,15 @@ mod rustoracer {
             py: Python<'py>,
             steer: f64,
             speed: f64,
-        ) -> (Bound<'py, PyArray1<f64>>, [f64; 3], bool) {
+        ) -> (Bound<'py, PyArray1<f64>>, [f64; 3], bool, f64, [f64; 3]) {
             let o = self.sim.step(&[[steer, speed]]);
+            let f = self.sim.frenet[0];
             (
                 PyArray1::from_vec(py, o.scans[0].clone()),
                 o.poses[0],
                 o.cols[0],
+                o.rewards[0],
+                [f.s, f.d, f.phi],
             )
         }
 

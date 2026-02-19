@@ -1,4 +1,5 @@
 mod car;
+mod centerline;
 mod map;
 #[cfg(feature = "ros")]
 mod ros;

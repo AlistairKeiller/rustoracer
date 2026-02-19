@@ -1,17 +1,22 @@
 use std::f64::consts::PI;
 
 use crate::car::Car;
+use crate::centerline::{Centerline, Frenet};
 use crate::map::OccGrid;
 
 pub struct Obs {
     pub scans: Vec<Vec<f64>>,
     pub poses: Vec<[f64; 3]>,
     pub cols: Vec<bool>,
+    pub rewards: Vec<f64>,
 }
 
 pub struct Sim {
     pub map: OccGrid,
     pub cars: Vec<Car>,
+    pub centerline: Centerline,
+    pub frenet: Vec<Frenet>,
+    prev_s: Vec<f64>,
     pub dt: f64,
     pub n_beams: usize,
     pub fov: f64,
@@ -20,8 +25,11 @@ pub struct Sim {
 
 impl Sim {
     pub fn new(yaml: &str, n: usize) -> Self {
+        let map = OccGrid::load(yaml);
+        let centerline = Centerline::from_map(&map);
         Self {
-            map: OccGrid::load(yaml),
+            map,
+            centerline,
             cars: vec![
                 Car {
                     x: 0.0,
@@ -32,6 +40,8 @@ impl Sim {
                 };
                 n
             ],
+            frenet: vec![Frenet::default(); n],
+            prev_s: vec![0.0; n],
             dt: 0.01,
             n_beams: 1081,
             fov: 270.0 * PI / 180.0,
@@ -39,7 +49,7 @@ impl Sim {
         }
     }
     pub fn reset(&mut self, poses: &[[f64; 3]]) -> Obs {
-        for (c, p) in self.cars.iter_mut().zip(poses) {
+        for (i, (c, p)) in self.cars.iter_mut().zip(poses).enumerate() {
             *c = Car {
                 x: p[0],
                 y: p[1],
@@ -47,6 +57,8 @@ impl Sim {
                 velocity: 0.0,
                 steering: 0.0,
             };
+            self.frenet[i] = self.centerline.frenet(p[0], p[1], p[2]);
+            self.prev_s[i] = self.frenet[i].s;
         }
         self.observe()
     }
@@ -58,21 +70,47 @@ impl Sim {
             velocity: 0.0,
             steering: 0.0,
         };
+        self.frenet[i] = self.centerline.frenet(pose[0], pose[1], pose[2]);
+        self.prev_s[i] = self.frenet[i].s;
     }
     pub fn step(&mut self, actions: &[[f64; 2]]) -> Obs {
         for (c, a) in self.cars.iter_mut().zip(actions) {
             c.step(a[0], a[1], self.dt);
         }
-        self.observe()
+        for i in 0..self.cars.len() {
+            self.frenet[i] =
+                self.centerline
+                    .frenet(self.cars[i].x, self.cars[i].y, self.cars[i].theta);
+        }
+        let mut obs = self.observe();
+        let half = self.centerline.total / 2.0;
+        obs.rewards = (0..self.cars.len())
+            .map(|i| {
+                if obs.cols[i] {
+                    return -1.0;
+                }
+                let mut ds = self.frenet[i].s - self.prev_s[i];
+                if ds > half {
+                    ds -= self.centerline.total;
+                }
+                if ds < -half {
+                    ds += self.centerline.total;
+                }
+                ds
+            })
+            .collect();
+        for i in 0..self.cars.len() {
+            self.prev_s[i] = self.frenet[i].s;
+        }
+        obs
     }
     pub fn observe(&self) -> Obs {
         let (nb, fov, mr) = (self.n_beams, self.fov, self.max_range);
-        let scans: Vec<Vec<f64>> = self
+        let scans = self
             .cars
             .iter()
             .map(|c| {
                 (0..nb)
-                    .into_iter()
                     .map(|i| {
                         self.map.raycast(
                             c.x,
@@ -90,6 +128,11 @@ impl Sim {
             .iter()
             .map(|c| self.map.occupied(c.x, c.y))
             .collect();
-        Obs { scans, poses, cols }
+        Obs {
+            scans,
+            poses,
+            cols,
+            rewards: vec![0.0; self.cars.len()],
+        }
     }
 }

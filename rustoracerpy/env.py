@@ -36,9 +36,16 @@ class RustoracerEnv(gym.Env):
 
     def step(self, action):
         self._steps += 1
-        scan, pose, col = self._sim.step(float(action[0]), float(action[1]))
-        reward = -10.0 if col else float(action[1]) / 10
-        return scan, reward, col, self._steps >= self._max_steps, {"pose": pose}
+        scan, pose, col, reward, frenet = self._sim.step(
+            float(action[0]), float(action[1])
+        )
+        return (
+            scan,
+            float(reward),
+            col,
+            self._steps >= self._max_steps,
+            {"pose": pose, "frenet": frenet},
+        )
 
     def render(self):
         rgb = self._sim.render()
