@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 image = "0.25.9"
+imageproc = "0.26.0"
 rayon = "1.11.0"
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = "0.0.19 "

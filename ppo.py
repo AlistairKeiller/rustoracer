@@ -5,7 +5,7 @@ import numpy as np
 
 env = gym.make("Rustoracer-v0", yaml="maps/berlin.yaml")
 model = PPO("MlpPolicy", env, verbose=1, n_steps=2048, batch_size=64, n_epochs=10)
-model.learn(total_timesteps=500_000)
+model.learn(total_timesteps=1_000_000)
 model.save("racer_ppo")
 env.close()
 
