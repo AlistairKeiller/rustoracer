@@ -88,7 +88,7 @@ impl Sim {
         let cols = self
             .cars
             .iter()
-            .map(|c| self.map.occupied(c.x, c.y))
+            .map(|c| self.map.distance(c.x, c.y) < self.map.res)
             .collect();
         Obs { scans, poses, cols }
     }

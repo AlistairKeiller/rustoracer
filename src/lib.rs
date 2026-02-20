@@ -4,6 +4,7 @@ mod map;
 mod python;
 mod render;
 mod sim;
+mod skeleton;
 #[cfg(feature = "python")]
 pub use python::*;
 
