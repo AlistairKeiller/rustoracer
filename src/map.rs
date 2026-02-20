@@ -10,6 +10,10 @@ struct MapMeta {
 }
 
 pub struct OccGrid {
+    inv_res: f64,
+    w: i32,
+    h: i32,
+    wu: usize,
     pub img: GrayImage,
     pub occupied: Vec<bool>,
     pub edt: Vec<f64>,
@@ -30,6 +34,10 @@ impl OccGrid {
         }
         let edt = euclidean_squared_distance_transform(&occupied_image);
         Self {
+            inv_res: 1.0 / m.resolution,
+            w: img.width() as i32,
+            h: img.height() as i32,
+            wu: img.width() as usize,
             img,
             occupied,
             edt: edt
@@ -42,29 +50,29 @@ impl OccGrid {
         }
     }
     pub fn occupied(&self, wx: f64, wy: f64) -> bool {
-        let px = ((wx - self.ox) / self.res) as i32;
-        let py = self.img.height() as i32 - 1 - ((wy - self.oy) / self.res) as i32;
+        let px = ((wx - self.ox) * self.inv_res) as i32;
+        let py = self.h - 1 - ((wy - self.oy) * self.inv_res) as i32;
         px < 0
             || py < 0
-            || px >= self.img.width() as i32
-            || py >= self.img.height() as i32
-            || self.occupied[px as usize + py as usize * self.img.width() as usize]
+            || px >= self.w
+            || py >= self.h
+            || self.occupied[px as usize + py as usize * self.wu]
     }
+    #[inline]
     pub fn distance(&self, wx: f64, wy: f64) -> f64 {
-        let px = ((wx - self.ox) / self.res) as i32;
-        let py = self.img.height() as i32 - 1 - ((wy - self.oy) / self.res) as i32;
-        if px < 0 || py < 0 || px >= self.img.width() as i32 || py >= self.img.height() as i32 {
+        let px = ((wx - self.ox) * self.inv_res) as i32;
+        let py = self.h - 1 - ((wy - self.oy) * self.inv_res) as i32;
+        if px < 0 || py < 0 || px >= self.w || py >= self.h {
             return 0.0;
         }
-        self.edt[px as usize + py as usize * self.img.width() as usize]
+        unsafe { *self.edt.get_unchecked(px as usize + py as usize * self.wu) }
     }
+    #[inline]
     pub fn raycast(&self, x: f64, y: f64, ang: f64, max: f64) -> f64 {
-        let (dx, dy) = (ang.cos(), ang.sin());
+        let (dy, dx) = ang.sin_cos();
         let mut t = 0.0;
         while t < max {
-            let wx = x + t * dx;
-            let wy = y + t * dy;
-            let d = self.distance(wx, wy);
+            let d = self.distance(x + t * dx, y + t * dy);
             if d < self.res {
                 return t;
             }
