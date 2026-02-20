@@ -27,6 +27,7 @@ class RustoracerEnv(gym.Env):
         self.action_space = spaces.Box(
             np.array([-0.4189, 0.0]), np.array([0.4189, 10.0]), dtype=np.float64
         )
+        self.skeleton = self._sim.skeleton
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
