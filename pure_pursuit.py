@@ -9,11 +9,10 @@ LOOKAHEAD = 1.5
 WHEELBASE = 0.3302
 SPEED = 5.0
 
-env: rustoracerpy.RustoracerEnv = gym.make(
-    "Rustoracer-v0", yaml="maps/berlin.yaml", render_mode="human"
-)  # type: ignore
+env = gym.make("Rustoracer-v0", yaml="maps/berlin.yaml", render_mode="human")
 obs, info = env.reset()
-waypoints = env.skeleton(info["pose"])
+env_unwrapped: rustoracerpy.RustoracerEnv = env.unwrapped  # type: ignore
+waypoints = env_unwrapped.skeleton(info["pose"])
 
 try:
     while True:
