@@ -41,7 +41,7 @@ pub fn get_neighbor_info(
 
     let p9 = if y > 0 && x > 0 {
         neighbors += 1;
-        if img.get_pixel(x - 1, y - 1)[0] != FOREGROUND_COLOR {
+        if img.get_pixel(x - 1, y - 1)[0] != BACKGROUND_COLOR {
             filled += 1;
             Edge::Filled
         } else {
@@ -52,7 +52,7 @@ pub fn get_neighbor_info(
     };
     let p2 = if y > 0 {
         neighbors += 1;
-        if img.get_pixel(x, y - 1)[0] != FOREGROUND_COLOR {
+        if img.get_pixel(x, y - 1)[0] != BACKGROUND_COLOR {
             filled += 1;
             Edge::Filled
         } else {
@@ -63,7 +63,7 @@ pub fn get_neighbor_info(
     };
     let p3 = if y > 0 && x < u32::MAX && x + 1 < width {
         neighbors += 1;
-        if img.get_pixel(x + 1, y - 1)[0] != FOREGROUND_COLOR {
+        if img.get_pixel(x + 1, y - 1)[0] != BACKGROUND_COLOR {
             filled += 1;
             Edge::Filled
         } else {
@@ -74,7 +74,7 @@ pub fn get_neighbor_info(
     };
     let p8 = if x > 0 {
         neighbors += 1;
-        if img.get_pixel(x - 1, y)[0] != FOREGROUND_COLOR {
+        if img.get_pixel(x - 1, y)[0] != BACKGROUND_COLOR {
             filled += 1;
             Edge::Filled
         } else {
@@ -85,7 +85,7 @@ pub fn get_neighbor_info(
     };
     let p4 = if x < u32::MAX && x + 1 < width {
         neighbors += 1;
-        if img.get_pixel(x + 1, y)[0] != FOREGROUND_COLOR {
+        if img.get_pixel(x + 1, y)[0] != BACKGROUND_COLOR {
             filled += 1;
             Edge::Filled
         } else {
@@ -96,7 +96,7 @@ pub fn get_neighbor_info(
     };
     let p7 = if x > 0 && y < u32::MAX && y + 1 < height {
         neighbors += 1;
-        if img.get_pixel(x - 1, y + 1)[0] != FOREGROUND_COLOR {
+        if img.get_pixel(x - 1, y + 1)[0] != BACKGROUND_COLOR {
             filled += 1;
             Edge::Filled
         } else {
@@ -107,7 +107,7 @@ pub fn get_neighbor_info(
     };
     let p6 = if y < u32::MAX && y + 1 < height {
         neighbors += 1;
-        if img.get_pixel(x, y + 1)[0] != FOREGROUND_COLOR {
+        if img.get_pixel(x, y + 1)[0] != BACKGROUND_COLOR {
             filled += 1;
             Edge::Filled
         } else {
@@ -118,7 +118,7 @@ pub fn get_neighbor_info(
     };
     let p5 = if x < u32::MAX && x + 1 < width && y < u32::MAX && y + 1 < height {
         neighbors += 1;
-        if img.get_pixel(x + 1, y + 1)[0] != FOREGROUND_COLOR {
+        if img.get_pixel(x + 1, y + 1)[0] != BACKGROUND_COLOR {
             filled += 1;
             Edge::Filled
         } else {
