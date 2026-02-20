@@ -1,5 +1,8 @@
+import time
+
 import gymnasium as gym
 import numpy as np
+
 import rustoracerpy
 
 LOOKAHEAD = 1.5
@@ -11,6 +14,7 @@ obs, info = env.reset()
 waypoints = env.unwrapped.skeleton(info["pose"])
 
 while True:
+    loop_start = time.perf_counter()
     x, y, theta = info["pose"]
     pos = np.array([x, y])
 
@@ -35,6 +39,8 @@ while True:
 
     obs, reward, terminated, truncated, info = env.step(np.array([steer, SPEED]))
     env.render()
+    elapsed = time.perf_counter() - loop_start
+    time.sleep(max(0.0, 1.0 / 100.0 - elapsed))
     if terminated or truncated:
         obs, info = env.reset()
 
