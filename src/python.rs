@@ -58,20 +58,11 @@ mod rustoracer {
             self.sim.max_range
         }
 
-        #[getter]
-        fn skeleton<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-            let map = &self.sim.map;
-            let mut pts = Vec::new();
-            for (x, y, p) in map.skeleton.enumerate_pixels() {
-                if p.0[0] != 255 {
-                    let wx = x as f64 * map.res + map.ox;
-                    let wy = (map.skeleton.height() as f64 - 1.0 - y as f64) * map.res + map.oy;
-                    pts.push(wx);
-                    pts.push(wy);
-                }
-            }
-            let n = pts.len() / 2;
-            numpy::ndarray::Array2::from_shape_vec((n, 2), pts)
+        fn skeleton<'py>(&self, py: Python<'py>, pose: [f64; 3]) -> Bound<'py, PyArray2<f64>> {
+            let pts = self.sim.map.ordered_skeleton(pose[0], pose[1]);
+            let n = pts.len();
+            let flat: Vec<f64> = pts.into_iter().flat_map(|p| p).collect();
+            numpy::ndarray::Array2::from_shape_vec((n, 2), flat)
                 .unwrap()
                 .into_pyarray(py)
         }

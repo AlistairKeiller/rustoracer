@@ -60,6 +60,50 @@ impl OccGrid {
             oy: m.origin[1],
         }
     }
+    pub fn ordered_skeleton(&self, start_x: f64, start_y: f64) -> Vec<[f64; 2]> {
+        let mut pts: Vec<[f64; 2]> = self
+            .skeleton
+            .enumerate_pixels()
+            .filter(|(_, _, p)| p.0[0] != 255)
+            .map(|(px, py, _)| {
+                [
+                    px as f64 * self.res + self.ox,
+                    (self.skeleton.height() as f64 - 1.0 - py as f64) * self.res + self.oy,
+                ]
+            })
+            .collect();
+        if pts.is_empty() {
+            return pts;
+        }
+        let mut ordered = Vec::with_capacity(pts.len());
+        let first = pts
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| {
+                let da = (a[0] - start_x).powi(2) + (a[1] - start_y).powi(2);
+                let db = (b[0] - start_x).powi(2) + (b[1] - start_y).powi(2);
+                da.partial_cmp(&db).unwrap()
+            })
+            .unwrap()
+            .0;
+        ordered.push(pts.swap_remove(first));
+        while !pts.is_empty() {
+            let last = *ordered.last().unwrap();
+            let nearest = pts
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| {
+                    let da = (a[0] - last[0]).powi(2) + (a[1] - last[1]).powi(2);
+                    let db = (b[0] - last[0]).powi(2) + (b[1] - last[1]).powi(2);
+                    da.partial_cmp(&db).unwrap()
+                })
+                .unwrap()
+                .0;
+            ordered.push(pts.swap_remove(nearest));
+        }
+        ordered
+    }
+
     #[inline]
     pub fn distance(&self, wx: f64, wy: f64) -> f64 {
         let px = ((wx - self.ox) * self.inv_res) as i32;
