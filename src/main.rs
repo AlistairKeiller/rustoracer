@@ -9,7 +9,7 @@ mod skeleton;
 use crate::sim::Sim;
 
 #[cfg(not(feature = "ros"))]
-#[show_image::main]
+#[cfg_attr(feature = "show_images", show_image::main)]
 fn main() {
     let mut sim = Sim::new("maps/berlin.yaml", 1);
     sim.reset(&[[0.0, 0.0, 0.0]]);

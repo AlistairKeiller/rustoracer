@@ -2,6 +2,7 @@ use crate::skeleton::thin_image_edges;
 use image::GrayImage;
 use imageproc::distance_transform::euclidean_squared_distance_transform;
 use serde::Deserialize;
+#[cfg(feature = "show_images")]
 use show_image::{ImageInfo, ImageView, create_window};
 
 #[derive(Deserialize)]
@@ -18,11 +19,13 @@ pub struct OccGrid {
     wu: usize,
     pub img: GrayImage,
     pub edt: Vec<f64>,
+    pub skeleton: GrayImage,
     pub res: f64,
     pub ox: f64,
     pub oy: f64,
 }
 
+#[cfg(feature = "show_images")]
 fn view_image(img: &GrayImage, title: &str) {
     let window = create_window(title, Default::default()).unwrap();
     let image_view = ImageView::new(ImageInfo::mono8(img.width(), img.height()), img.as_raw());
@@ -40,13 +43,9 @@ impl OccGrid {
         }
         let edt = euclidean_squared_distance_transform(&occupied_image);
         let skeleton = thin_image_edges(&occupied_image);
+        #[cfg(feature = "show_images")]
         view_image(&occupied_image, "occupied");
-        let max_edt = edt.pixels().map(|p| p.0[0]).fold(0.0f64, f64::max);
-        let edt_gray = GrayImage::from_fn(edt.width(), edt.height(), |x, y| {
-            let val = edt.get_pixel(x, y).0[0];
-            image::Luma([(val / max_edt * 255.0) as u8])
-        });
-        view_image(&edt_gray, "edt");
+        #[cfg(feature = "show_images")]
         view_image(&skeleton, "skeleton");
         Self {
             inv_res: 1.0 / m.resolution,
@@ -55,6 +54,7 @@ impl OccGrid {
             wu: img.width() as usize,
             img,
             edt: edt.pixels().map(|p| p.0[0].sqrt() * m.resolution).collect(),
+            skeleton,
             res: m.resolution,
             ox: m.origin[0],
             oy: m.origin[1],
