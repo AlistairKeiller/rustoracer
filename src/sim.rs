@@ -28,7 +28,9 @@ impl Sim {
                     y: 0.0,
                     theta: 0.0,
                     velocity: 0.0,
-                    steering: 0.0
+                    steering: 0.0,
+                    yaw_rate: 0.0,
+                    slip_angle: 0.0,
                 };
                 n
             ],
@@ -46,6 +48,8 @@ impl Sim {
                 theta: p[2],
                 velocity: 0.0,
                 steering: 0.0,
+                yaw_rate: 0.0,
+                slip_angle: 0.0,
             };
         }
         self.observe()
@@ -57,6 +61,8 @@ impl Sim {
             theta: pose[2],
             velocity: 0.0,
             steering: 0.0,
+            yaw_rate: 0.0,
+            slip_angle: 0.0,
         };
     }
     pub fn step(&mut self, actions: &[[f64; 2]]) -> Obs {
