@@ -12,12 +12,12 @@ SPEED = 5.0
 env = gym.make("Rustoracer-v0", yaml="maps/berlin.yaml", render_mode="human")
 obs, info = env.reset()
 env_unwrapped: rustoracerpy.RustoracerEnv = env.unwrapped  # type: ignore
-waypoints = env_unwrapped.skeleton(info["pose"])
+waypoints = env_unwrapped.skeleton
 
 try:
     while True:
         loop_start = time.perf_counter()
-        x, y, theta = info["pose"]
+        (x, y, theta, *_) = info["state"]
         pos = np.array([x, y])
 
         # Find lookahead point

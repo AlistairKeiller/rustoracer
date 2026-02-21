@@ -15,12 +15,10 @@ struct MapMeta {
 
 pub struct OccGrid {
     inv_res: f64,
-    w: i32,
-    h: i32,
-    wu: usize,
     pub img: GrayImage,
     pub edt: Vec<f64>,
     pub skeleton: GrayImage,
+    pub ordered_skeleton: Vec<[f64; 2]>,
     pub res: f64,
     pub ox: f64,
     pub oy: f64,
@@ -48,29 +46,27 @@ impl OccGrid {
         view_image(&occupied_image, "occupied");
         #[cfg(feature = "show_images")]
         view_image(&skeleton, "skeleton");
-        Self {
+        let mut map = Self {
             inv_res: 1.0 / m.resolution,
-            w: img.width() as i32,
-            h: img.height() as i32,
-            wu: img.width() as usize,
             img,
             edt: edt.pixels().map(|p| p.0[0].sqrt() * m.resolution).collect(),
             skeleton,
+            ordered_skeleton: Vec::new(),
             res: m.resolution,
             ox: m.origin[0],
             oy: m.origin[1],
-        }
+        };
+        map.ordered_skeleton = map.ordered_skeleton();
+        map
     }
-    pub fn ordered_skeleton(&self, start_x: f64, start_y: f64) -> Vec<[f64; 2]> {
+    pub fn ordered_skeleton(&self) -> Vec<[f64; 2]> {
         let mut pts: Vec<[f64; 2]> = self
             .skeleton
             .enumerate_pixels()
             .filter(|(_, _, p)| p.0[0] != 255)
             .map(|(px, py, _)| {
-                [
-                    px as f64 * self.res + self.ox,
-                    (self.skeleton.height() as f64 - 1.0 - py as f64) * self.res + self.oy,
-                ]
+                let (x, y) = self.pixels_to_position(px, py);
+                [x, y]
             })
             .collect();
         if pts.is_empty() {
@@ -81,8 +77,8 @@ impl OccGrid {
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| {
-                let da = (a[0] - start_x).powi(2) + (a[1] - start_y).powi(2);
-                let db = (b[0] - start_x).powi(2) + (b[1] - start_y).powi(2);
+                let da = a[0].powi(2) + a[1].powi(2);
+                let db = b[0].powi(2) + b[1].powi(2);
                 da.partial_cmp(&db).unwrap()
             })
             .unwrap()
@@ -105,16 +101,25 @@ impl OccGrid {
         ordered
     }
     #[inline]
-    pub fn position_to_pixels(&self, wx: f64, wy: f64) -> (i32, i32) {
-        let px = ((wx - self.ox) * self.inv_res) as i32;
-        let py = self.h - 1 - ((wy - self.oy) * self.inv_res) as i32;
+    pub fn pixels_to_position(&self, px: u32, py: u32) -> (f64, f64) {
+        let wx = px as f64 * self.res + self.ox;
+        let wy = (self.img.height() - 1 - py) as f64 * self.res + self.oy;
+        (wx, wy)
+    }
+    #[inline]
+    pub fn position_to_pixels(&self, wx: f64, wy: f64) -> (u32, u32) {
+        let px = ((wx - self.ox) * self.inv_res) as u32;
+        let py = self.img.height() - 1 - ((wy - self.oy) * self.inv_res) as u32;
         (px, py)
     }
     #[inline]
-    pub fn distance(&self, wx: f64, wy: f64) -> f64 {
-        let (px, py) = self.position_to_pixels(wx, wy);
-        if (0..self.w).contains(&px) && (0..self.h).contains(&py) {
-            unsafe { *self.edt.get_unchecked(px as usize + py as usize * self.wu) }
+    pub fn edt(&self, px: u32, py: u32) -> f64 {
+        if (0..self.img.width()).contains(&px) && (0..self.img.height()).contains(&py) {
+            unsafe {
+                *self
+                    .edt
+                    .get_unchecked((px + py * self.img.width()) as usize)
+            }
         } else {
             0.0
         }
@@ -124,7 +129,8 @@ impl OccGrid {
         let (dy, dx) = ang.sin_cos();
         let mut t = 0.0;
         while t < max {
-            let d = self.distance(x + t * dx, y + t * dy);
+            let (px, py) = self.position_to_pixels(x + t * dx, y + t * dy);
+            let d = self.edt(px, py);
             if d < self.res {
                 return t;
             }
@@ -132,7 +138,7 @@ impl OccGrid {
         }
         max
     }
-    pub fn car_pixels(&self, car: &Car) -> Vec<(i32, i32)> {
+    pub fn car_pixels(&self, car: &Car) -> Vec<(u32, u32)> {
         let (sa, ca) = car.theta.sin_cos();
         let (hl, hw) = (LENGTH / 2.0 * self.inv_res, WIDTH / 2.0 * self.inv_res);
         let (cx, cy) = self.position_to_pixels(car.x, car.y);
@@ -142,7 +148,7 @@ impl OccGrid {
             for dx in -r..=r {
                 let (fx, fy) = (dx as f64, dy as f64);
                 if (fx * ca - fy * sa).abs() <= hl && (fx * sa + fy * ca).abs() <= hw {
-                    out.push((cx + dx, cy + dy));
+                    out.push(((cx as i32 + dx) as u32, (cy as i32 + dy) as u32));
                 }
             }
         }
@@ -150,11 +156,8 @@ impl OccGrid {
     }
 
     pub fn car_collides(&self, car: &Car) -> bool {
-        self.car_pixels(car).into_iter().any(|(x, y)| {
-            if x < 0 || y < 0 || x >= self.w || y >= self.h {
-                return true;
-            }
-            self.edt[x as usize + y as usize * self.wu] < self.res
-        })
+        self.car_pixels(car)
+            .into_iter()
+            .any(|(x, y)| self.edt(x, y) < self.res)
     }
 }

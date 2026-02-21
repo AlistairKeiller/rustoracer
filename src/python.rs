@@ -25,11 +25,11 @@ mod rustoracer {
             &mut self,
             py: Python<'py>,
             pose: [f64; 3],
-        ) -> (Bound<'py, PyArray1<f64>>, [f64; 3], bool) {
+        ) -> (Bound<'py, PyArray1<f64>>, [f64; 7], bool) {
             let o = self.sim.reset(&[pose]);
             (
                 PyArray1::from_vec(py, o.scans[0].clone()),
-                o.poses[0],
+                o.state[0],
                 o.cols[0],
             )
         }
@@ -39,11 +39,11 @@ mod rustoracer {
             py: Python<'py>,
             steer: f64,
             speed: f64,
-        ) -> (Bound<'py, PyArray1<f64>>, [f64; 3], bool) {
+        ) -> (Bound<'py, PyArray1<f64>>, [f64; 7], bool) {
             let o = self.sim.step(&[[steer, speed]]);
             (
                 PyArray1::from_vec(py, o.scans[0].clone()),
-                o.poses[0],
+                o.state[0],
                 o.cols[0],
             )
         }
@@ -58,8 +58,9 @@ mod rustoracer {
             self.sim.max_range
         }
 
-        fn skeleton<'py>(&self, py: Python<'py>, pose: [f64; 3]) -> Bound<'py, PyArray2<f64>> {
-            let pts = self.sim.map.ordered_skeleton(pose[0], pose[1]);
+        #[getter]
+        fn skeleton<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+            let pts = self.sim.map.ordered_skeleton.clone();
             let n = pts.len();
             let flat: Vec<f64> = pts.into_iter().flat_map(|p| p).collect();
             numpy::ndarray::Array2::from_shape_vec((n, 2), flat)

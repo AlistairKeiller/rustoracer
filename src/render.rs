@@ -19,8 +19,8 @@ pub fn render_rgb(map: &OccGrid, cars: &[Car]) -> (Vec<u8>, u32, u32) {
                 &mut buf,
                 w,
                 h,
-                cx + (ft * ca) as i32,
-                cy - (ft * sa) as i32,
+                cx + (ft * ca) as u32,
+                cy - (ft * sa) as u32,
                 [251, 44, 54],
             );
         }
@@ -28,8 +28,8 @@ pub fn render_rgb(map: &OccGrid, cars: &[Car]) -> (Vec<u8>, u32, u32) {
     (buf, h, w)
 }
 
-fn set_px(buf: &mut [u8], w: u32, h: u32, x: i32, y: i32, c: [u8; 3]) {
-    if (0..w as i32).contains(&x) && (0..h as i32).contains(&y) {
+fn set_px(buf: &mut [u8], w: u32, h: u32, x: u32, y: u32, c: [u8; 3]) {
+    if (0..w).contains(&x) && (0..h).contains(&y) {
         let i = (y as usize * w as usize + x as usize) * 3;
         buf[i..i + 3].copy_from_slice(&c);
     }

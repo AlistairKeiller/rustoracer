@@ -5,7 +5,7 @@ use crate::map::OccGrid;
 
 pub struct Obs {
     pub scans: Vec<Vec<f64>>,
-    pub poses: Vec<[f64; 3]>,
+    pub state: Vec<[f64; 7]>,
     pub cols: Vec<bool>,
 }
 
@@ -90,8 +90,22 @@ impl Sim {
                     .collect()
             })
             .collect();
-        let poses = self.cars.iter().map(|c| [c.x, c.y, c.theta]).collect();
+        let state = self
+            .cars
+            .iter()
+            .map(|c| {
+                [
+                    c.x,
+                    c.y,
+                    c.theta,
+                    c.velocity,
+                    c.steering,
+                    c.yaw_rate,
+                    c.slip_angle,
+                ]
+            })
+            .collect();
         let cols = self.cars.iter().map(|c| self.map.car_collides(c)).collect();
-        Obs { scans, poses, cols }
+        Obs { scans, state, cols }
     }
 }
