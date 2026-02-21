@@ -9,7 +9,7 @@ pub fn render_rgb(map: &OccGrid, cars: &[Car]) -> (Vec<u8>, u32, u32) {
     }
     for car in cars {
         for (x, y) in map.car_pixels(car) {
-            set_px(&mut buf, w, h, x, y, [255, 0, 0]);
+            set_px(&mut buf, w, h, x, y, [43, 127, 255]);
         }
         let (sa, ca) = car.theta.sin_cos();
         let (cx, cy) = map.position_to_pixels(car.x, car.y);
@@ -21,7 +21,7 @@ pub fn render_rgb(map: &OccGrid, cars: &[Car]) -> (Vec<u8>, u32, u32) {
                 h,
                 cx + (ft * ca) as i32,
                 cy - (ft * sa) as i32,
-                [0, 255, 0],
+                [251, 44, 54],
             );
         }
     }
