@@ -1,5 +1,4 @@
 const BACKGROUND_COLOR: u8 = 255;
-const FOREGROUND_COLOR: u8 = 0;
 
 /// Classification of pixels in an image used for edge thinning.
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -5,8 +5,6 @@ mod python;
 mod render;
 mod sim;
 mod skeleton;
-#[cfg(feature = "python")]
-pub use python::*;
 
 pub use car::Car;
 pub use map::OccGrid;
