@@ -1,25 +1,25 @@
-// const G: f64 = 9.81;
-// const V_KINEMATIC_THRESHOLD: f64 = 0.1; // m/s
-// const MU: f64 = 1.0489;
-// const C_SF: f64 = 4.718;
-// const C_SR: f64 = 5.4562;
-const LENGTH_FRONT: f64 = 0.15875;
-const LENGTH_REAR: f64 = 0.17145;
-const LENGTH_WHEELBASE: f64 = LENGTH_FRONT + LENGTH_REAR;
-// const H: f64 = 0.074;
-// const MASS: f64 = 3.74;
-// const I_Z: f64 = 0.04712;
-const STEERING_MIN: f64 = -0.4189;
-const STEERING_MAX: f64 = 0.4189;
-const STEERING_VELOCITY_MIN: f64 = -3.2;
-const STEERING_VELOCITY_MAX: f64 = 3.2;
-// const V_SWITCH: f64 = 7.319;
-const A_MIN: f64 = -9.51;
-const A_MAX: f64 = 9.51;
-const V_MIN: f64 = -5.0;
-const V_MAX: f64 = 20.0;
-// const WIDTH: f64 = 0.31;
-// const LENGTH: f64 = 0.58;
+// pub const G: f64 = 9.81;
+// pub const V_KINEMATIC_THRESHOLD: f64 = 0.1; // m/s
+// pub const MU: f64 = 1.0489;
+// pub const C_SF: f64 = 4.718;
+// pub const C_SR: f64 = 5.4562;
+pub const LENGTH_FRONT: f64 = 0.15875;
+pub const LENGTH_REAR: f64 = 0.17145;
+pub const LENGTH_WHEELBASE: f64 = LENGTH_FRONT + LENGTH_REAR;
+// pub const H: f64 = 0.074;
+// pub const MASS: f64 = 3.74;
+// pub const I_Z: f64 = 0.04712;
+pub const STEERING_MIN: f64 = -0.4189;
+pub const STEERING_MAX: f64 = 0.4189;
+pub const STEERING_VELOCITY_MIN: f64 = -3.2;
+pub const STEERING_VELOCITY_MAX: f64 = 3.2;
+// pub const V_SWITCH: f64 = 7.319;
+pub const A_MIN: f64 = -9.51;
+pub const A_MAX: f64 = 9.51;
+pub const V_MIN: f64 = -5.0;
+pub const V_MAX: f64 = 20.0;
+pub const WIDTH: f64 = 0.31;
+pub const LENGTH: f64 = 0.58;
 
 #[derive(Clone)]
 pub struct Car {
