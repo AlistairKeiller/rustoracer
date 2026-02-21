@@ -85,11 +85,7 @@ impl Sim {
             })
             .collect();
         let poses = self.cars.iter().map(|c| [c.x, c.y, c.theta]).collect();
-        let cols = self
-            .cars
-            .iter()
-            .map(|c| self.map.distance(c.x, c.y) < self.map.res)
-            .collect();
+        let cols = self.cars.iter().map(|c| self.map.car_collides(c)).collect();
         Obs { scans, poses, cols }
     }
 }

@@ -1,3 +1,4 @@
+use crate::car::{Car, LENGTH, WIDTH};
 use crate::skeleton::thin_image_edges;
 use image::GrayImage;
 use imageproc::distance_transform::euclidean_squared_distance_transform;
@@ -103,15 +104,20 @@ impl OccGrid {
         }
         ordered
     }
-
     #[inline]
-    pub fn distance(&self, wx: f64, wy: f64) -> f64 {
+    pub fn position_to_pixels(&self, wx: f64, wy: f64) -> (i32, i32) {
         let px = ((wx - self.ox) * self.inv_res) as i32;
         let py = self.h - 1 - ((wy - self.oy) * self.inv_res) as i32;
-        if px < 0 || py < 0 || px >= self.w || py >= self.h {
-            return 0.0;
+        (px, py)
+    }
+    #[inline]
+    pub fn distance(&self, wx: f64, wy: f64) -> f64 {
+        let (px, py) = self.position_to_pixels(wx, wy);
+        if (0..self.w).contains(&px) && (0..self.h).contains(&py) {
+            unsafe { *self.edt.get_unchecked(px as usize + py as usize * self.wu) }
+        } else {
+            0.0
         }
-        unsafe { *self.edt.get_unchecked(px as usize + py as usize * self.wu) }
     }
     #[inline]
     pub fn raycast(&self, x: f64, y: f64, ang: f64, max: f64) -> f64 {
@@ -125,5 +131,30 @@ impl OccGrid {
             t += d;
         }
         max
+    }
+    pub fn car_pixels(&self, car: &Car) -> Vec<(i32, i32)> {
+        let (sa, ca) = car.theta.sin_cos();
+        let (hl, hw) = (LENGTH / 2.0 * self.inv_res, WIDTH / 2.0 * self.inv_res);
+        let (cx, cy) = self.position_to_pixels(car.x, car.y);
+        let r = hl.hypot(hw).ceil() as i32;
+        let mut out = Vec::new();
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let (fx, fy) = (dx as f64, dy as f64);
+                if (fx * ca - fy * sa).abs() <= hl && (fx * sa + fy * ca).abs() <= hw {
+                    out.push((cx + dx, cy + dy));
+                }
+            }
+        }
+        out
+    }
+
+    pub fn car_collides(&self, car: &Car) -> bool {
+        self.car_pixels(car).into_iter().any(|(x, y)| {
+            if x < 0 || y < 0 || x >= self.w || y >= self.h {
+                return true;
+            }
+            self.edt[x as usize + y as usize * self.wu] < self.res
+        })
     }
 }

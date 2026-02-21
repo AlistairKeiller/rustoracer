@@ -1,8 +1,5 @@
-use crate::car::{Car, LENGTH, WIDTH};
+use crate::car::Car;
 use crate::map::OccGrid;
-
-const HALF_L: f64 = LENGTH / 2.0;
-const HALF_W: f64 = WIDTH / 2.0;
 
 pub fn render_rgb(map: &OccGrid, cars: &[Car]) -> (Vec<u8>, u32, u32) {
     let (w, h) = (map.img.width(), map.img.height());
@@ -11,30 +8,19 @@ pub fn render_rgb(map: &OccGrid, cars: &[Car]) -> (Vec<u8>, u32, u32) {
         buf[i * 3..][..3].fill(p.0[0]);
     }
     for car in cars {
-        let s = 1.0 / map.res;
-        let cx = (car.x - map.ox) * s;
-        let cy = h as f64 - 1.0 - (car.y - map.oy) * s;
-        let (sa, ca) = car.theta.sin_cos();
-        let (hl, hw) = (HALF_L * s, HALF_W * s);
-
-        let r = hl.hypot(hw).ceil() as i32;
-        for dy in -r..=r {
-            for dx in -r..=r {
-                let (fx, fy) = (dx as f64, dy as f64);
-                if (fx * ca - fy * sa).abs() <= hl && (fx * sa + fy * ca).abs() <= hw {
-                    set_px(&mut buf, w, h, cx as i32 + dx, cy as i32 + dy, [255, 0, 0]);
-                }
-            }
+        for (x, y) in map.car_pixels(car) {
+            set_px(&mut buf, w, h, x, y, [255, 0, 0]);
         }
-
-        for t in 0..=(hl as i32 + 2) {
+        let (sa, ca) = car.theta.sin_cos();
+        let (cx, cy) = map.position_to_pixels(car.x, car.y);
+        for t in 0..8 {
             let ft = t as f64;
             set_px(
                 &mut buf,
                 w,
                 h,
-                cx as i32 + (ft * ca) as i32,
-                cy as i32 - (ft * sa) as i32,
+                cx + (ft * ca) as i32,
+                cy - (ft * sa) as i32,
                 [0, 255, 0],
             );
         }
