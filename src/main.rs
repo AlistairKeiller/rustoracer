@@ -11,15 +11,10 @@ use crate::sim::Sim;
 #[cfg(not(feature = "ros"))]
 #[cfg_attr(feature = "show_images", show_image::main)]
 fn main() {
-    let mut sim = Sim::new("maps/berlin.yaml", 1);
+    let mut sim = Sim::new("maps/berlin.yaml", 1, 10_000);
     sim.reset(&[[0.0, 0.0, 0.0]]);
     for _ in 0..1000 {
         let obs = sim.step(&[0.0, 1.0]);
-        for (crashed, i) in obs.cols.iter().zip(0..obs.cols.len()) {
-            if *crashed {
-                sim.reset_single(&[0.0, 0.0, 0.0], i);
-            }
-        }
     }
 }
 
@@ -27,7 +22,7 @@ fn main() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bridge = ros::RosBridge {
-        sim: sim::Sim::new("maps/berlin.yaml", 1),
+        sim: sim::Sim::new("maps/berlin.yaml", 1, 10_000),
         hz: 100.0,
     };
     bridge.spin(vec![[0.0, 0.0, 0.0]]).await

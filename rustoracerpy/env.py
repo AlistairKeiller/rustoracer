@@ -21,16 +21,11 @@ class RustoracerEnv(gym.vector.VectorEnv):
         max_steps: int = 10_000,
         render_mode: str | None = None,
     ) -> None:
-        self._sim: PySim = PySim(yaml, num_envs)
-        self._max_steps: int = max_steps
-        self._steps: NDArray[np.int32] = np.zeros(num_envs, dtype=np.int32)
-        self._prev_progress: NDArray[np.float64] = np.zeros(num_envs, dtype=np.float64)
+        self._sim: PySim = PySim(yaml, num_envs, max_steps)
 
         single_obs_space = spaces.Box(
             0.0, self._sim.max_range, shape=(self._sim.n_beams,), dtype=np.float64
         )
-        self._act_low = np.array([-0.4189, 0.0])
-        self._act_high = np.array([0.4189, 20.0])
         single_act_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float64)
 
         self.num_envs = num_envs
@@ -50,12 +45,9 @@ class RustoracerEnv(gym.vector.VectorEnv):
     ) -> tuple[NDArray[np.float64], dict[str, NDArray[np.float64]]]:
         if seed is not None:
             self._sim.seed(seed)
-        self._steps[:] = 0
-        self._prev_progress[:] = 0.0
-        scans, states, _, progress = self._sim.reset()
+        scans, _rewards, _terminated, _truncated, states = self._sim.reset()
         return scans.reshape(self.num_envs, -1), {
             "state": states.reshape(self.num_envs, -1),
-            "progress": progress,
         }
 
     def step(
@@ -68,42 +60,14 @@ class RustoracerEnv(gym.vector.VectorEnv):
         NDArray[np.bool_],
         dict[str, NDArray],
     ]:
-        self._steps += 1
-        actions_rescaled = self._act_low + (actions + 1.0) * 0.5 * (
-            self._act_high - self._act_low
-        )
-        scans, states, cols, progress = self._sim.step(actions_rescaled.ravel())
-        obs = scans.reshape(self.num_envs, -1)
-
-        dp = progress - self._prev_progress
-        rewards = np.where(cols, -100.0, dp * 100.0 - 0.001)
-        self._prev_progress = progress.copy()
-
-        terminated = cols
-        truncated = self._steps >= self._max_steps
-        dones = terminated | truncated
-
-        for i in range(self.num_envs):
-            if dones[i]:
-                self._sim.reset_single(i)
-                self._steps[i] = 0
-                self._prev_progress[i] = 0.0
-                new_scans, new_states, _, new_progress = self._sim.observe()
-                new_scans = new_scans.reshape(self.num_envs, -1)
-                new_states = new_states.reshape(self.num_envs, -1)
-                obs[i] = new_scans[i]
-                states = states.reshape(self.num_envs, -1)
-                states[i] = new_states[i]
-                progress[i] = new_progress[i]
-
+        scans, rewards, terminated, truncated, states = self._sim.step(actions.ravel())
         return (
-            obs,
+            scans.reshape(self.num_envs, -1),
             rewards,
             terminated,
             truncated,
             {
                 "state": states.reshape(self.num_envs, -1),
-                "progress": progress,
             },
         )
 

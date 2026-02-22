@@ -7,6 +7,8 @@ use crate::Sim;
 mod rustoracer {
     use numpy::PyReadonlyArray1;
 
+    use crate::car::{STEER_MAX, STEER_MIN, V_MAX, V_MIN};
+
     use super::*;
 
     #[pyclass]
@@ -17,9 +19,9 @@ mod rustoracer {
     #[pymethods]
     impl PySim {
         #[new]
-        fn new(yaml: &str, n: usize) -> Self {
+        fn new(yaml: &str, n: usize, max_steps: u32) -> Self {
             Self {
-                sim: Sim::new(yaml, n),
+                sim: Sim::new(yaml, n, max_steps),
             }
         }
 
@@ -34,14 +36,16 @@ mod rustoracer {
             Bound<'py, PyArray1<f64>>,
             Bound<'py, PyArray1<f64>>,
             Bound<'py, PyArray1<bool>>,
+            Bound<'py, PyArray1<bool>>,
             Bound<'py, PyArray1<f64>>,
         ) {
             let o = self.sim.reset_zeros();
             (
                 o.scans.into_pyarray(py),
+                o.rewards.into_pyarray(py),
+                o.terminated.into_pyarray(py),
+                o.truncated.into_pyarray(py),
                 o.state.into_pyarray(py),
-                o.cols.into_pyarray(py),
-                o.progress.into_pyarray(py),
             )
         }
 
@@ -53,14 +57,26 @@ mod rustoracer {
             Bound<'py, PyArray1<f64>>,
             Bound<'py, PyArray1<f64>>,
             Bound<'py, PyArray1<bool>>,
+            Bound<'py, PyArray1<bool>>,
             Bound<'py, PyArray1<f64>>,
         ) {
-            let o = self.sim.step(actions.as_slice().unwrap());
+            let raw = actions.as_slice().unwrap();
+            let rescaled: Vec<f64> = raw
+                .chunks(2)
+                .flat_map(|a| {
+                    [
+                        STEER_MIN + (a[0] + 1.0) * 0.5 * (STEER_MAX - STEER_MIN),
+                        V_MIN + (a[1] + 1.0) * 0.5 * (V_MAX - V_MIN),
+                    ]
+                })
+                .collect();
+            let o = self.sim.step(&rescaled);
             (
                 o.scans.into_pyarray(py),
+                o.rewards.into_pyarray(py),
+                o.terminated.into_pyarray(py),
+                o.truncated.into_pyarray(py),
                 o.state.into_pyarray(py),
-                o.cols.into_pyarray(py),
-                o.progress.into_pyarray(py),
             )
         }
 
@@ -104,14 +120,16 @@ mod rustoracer {
             Bound<'py, PyArray1<f64>>,
             Bound<'py, PyArray1<f64>>,
             Bound<'py, PyArray1<bool>>,
+            Bound<'py, PyArray1<bool>>,
             Bound<'py, PyArray1<f64>>,
         ) {
             let o = self.sim.observe();
             (
                 o.scans.into_pyarray(py),
+                o.rewards.into_pyarray(py),
+                o.terminated.into_pyarray(py),
+                o.truncated.into_pyarray(py),
                 o.state.into_pyarray(py),
-                o.cols.into_pyarray(py),
-                o.progress.into_pyarray(py),
             )
         }
     }

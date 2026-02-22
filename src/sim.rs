@@ -7,9 +7,10 @@ use crate::map::OccGrid;
 
 pub struct Obs {
     pub scans: Vec<f64>,
+    pub rewards: Vec<f64>,
+    pub terminated: Vec<bool>,
+    pub truncated: Vec<bool>,
     pub state: Vec<f64>,
-    pub cols: Vec<bool>,
-    pub progress: Vec<f64>,
 }
 
 pub struct Sim {
@@ -21,11 +22,12 @@ pub struct Sim {
     pub max_range: f64,
     pub rng: SmallRng,
     pub waypoint_idx: Vec<usize>,
-    pub laps: Vec<i32>,
+    pub steps: Vec<u32>,
+    pub max_steps: u32,
 }
 
 impl Sim {
-    pub fn new(yaml: &str, n: usize) -> Self {
+    pub fn new(yaml: &str, n: usize, max_steps: u32) -> Self {
         Self {
             map: OccGrid::load(yaml),
             cars: vec![
@@ -46,7 +48,8 @@ impl Sim {
             max_range: 30.0,
             rng: SmallRng::seed_from_u64(0),
             waypoint_idx: vec![0; n],
-            laps: vec![0; n],
+            steps: vec![0; n],
+            max_steps,
         }
     }
     pub fn seed(&mut self, seed: u64) {
@@ -54,7 +57,7 @@ impl Sim {
     }
     pub fn reset_zeros(&mut self) -> Obs {
         self.waypoint_idx = vec![0; self.cars.len()];
-        self.laps = vec![0; self.cars.len()];
+        self.steps = vec![0; self.cars.len()];
         for c in self.cars.iter_mut() {
             *c = Car {
                 x: 0.0,
@@ -70,7 +73,7 @@ impl Sim {
     }
     pub fn reset(&mut self, poses: &[[f64; 3]]) -> Obs {
         self.waypoint_idx = vec![0; self.cars.len()];
-        self.laps = vec![0; self.cars.len()];
+        self.steps = vec![0; self.cars.len()];
         for (c, p) in self.cars.iter_mut().zip(poses) {
             *c = Car {
                 x: p[0],
@@ -86,7 +89,7 @@ impl Sim {
     }
     pub fn reset_single(&mut self, pose: &[f64; 3], i: usize) {
         self.waypoint_idx[i] = 0;
-        self.laps[i] = 0;
+        self.steps[i] = 0;
         self.cars[i] = Car {
             x: pose[0],
             y: pose[1],
@@ -126,31 +129,38 @@ impl Sim {
             .flatten()
             .collect();
         let n_wps = self.map.ordered_skeleton.len();
-        for (i, c) in self.cars.iter().enumerate() {
-            let prev_idx = self.waypoint_idx[i];
-            let nearest = (0..n_wps)
-                .min_by(|&a, &b| {
-                    let wp_a = self.map.ordered_skeleton[a];
-                    let wp_b = self.map.ordered_skeleton[b];
-                    let da = (wp_a[0] - c.x).powi(2) + (wp_a[1] - c.y).powi(2);
-                    let db = (wp_b[0] - c.x).powi(2) + (wp_b[1] - c.y).powi(2);
-                    da.partial_cmp(&db).unwrap()
-                })
-                .unwrap();
-            let new_idx = nearest;
-            if prev_idx > n_wps * 3 / 4 && new_idx < n_wps / 4 {
-                self.laps[i] += 1;
-            } else if prev_idx < n_wps / 4 && new_idx > n_wps * 3 / 4 {
-                self.laps[i] -= 1;
-            }
-            self.waypoint_idx[i] = new_idx;
-        }
-        let progress: Vec<f64> = self
-            .waypoint_idx
+        let rewards: Vec<f64> = self
+            .cars
             .iter()
-            .zip(self.laps.iter())
-            .map(|(&idx, &lap)| idx as f64 / self.map.ordered_skeleton.len() as f64 + lap as f64)
+            .enumerate()
+            .map(|(i, c)| {
+                let prev_idx = self.waypoint_idx[i];
+                let nearest = (0..n_wps)
+                    .min_by(|&a, &b| {
+                        let wp_a = self.map.ordered_skeleton[a];
+                        let wp_b = self.map.ordered_skeleton[b];
+                        let da = (wp_a[0] - c.x).powi(2) + (wp_a[1] - c.y).powi(2);
+                        let db = (wp_b[0] - c.x).powi(2) + (wp_b[1] - c.y).powi(2);
+                        da.partial_cmp(&db).unwrap()
+                    })
+                    .unwrap();
+                self.waypoint_idx[i] = nearest;
+                let mut delta = nearest as f64 - prev_idx as f64;
+                if delta > n_wps as f64 / 2.0 {
+                    delta -= n_wps as f64;
+                } else if delta < -(n_wps as f64 / 2.0) {
+                    delta += n_wps as f64;
+                }
+                delta
+            })
             .collect();
+        let terminated: Vec<bool> = self.cars.iter().map(|c| self.map.car_collides(c)).collect();
+        let truncated: Vec<bool> = self.steps.iter().map(|&s| s >= self.max_steps).collect();
+        for i in 0..self.cars.len() {
+            if terminated[i] || truncated[i] {
+                self.reset_single(&[0.0, 0.0, 0.0], i);
+            }
+        }
         let state: Vec<f64> = self
             .cars
             .iter()
@@ -167,12 +177,12 @@ impl Sim {
             })
             .flatten()
             .collect();
-        let cols = self.cars.iter().map(|c| self.map.car_collides(c)).collect();
         Obs {
             scans,
+            rewards,
+            terminated,
+            truncated,
             state,
-            cols,
-            progress,
         }
     }
 }
