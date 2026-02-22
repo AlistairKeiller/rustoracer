@@ -41,6 +41,8 @@ class RustoracerEnv(gym.Env):
         options: dict | None = None,
     ) -> tuple[NDArray[np.float64], dict[str, NDArray[np.float64]]]:
         super().reset(seed=seed)
+        if seed is not None:
+            self._sim.seed(seed)
         self._steps = 0
         scan: NDArray[np.float64]
         state: NDArray[np.float64]

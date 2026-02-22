@@ -2,6 +2,7 @@ use crate::car::{Car, LENGTH, WIDTH};
 use crate::skeleton::thin_image_edges;
 use image::GrayImage;
 use imageproc::distance_transform::euclidean_squared_distance_transform;
+use rand::{Rng, RngExt};
 use serde::Deserialize;
 #[cfg(feature = "show_images")]
 use show_image::{ImageInfo, ImageView, create_window};
@@ -102,14 +103,14 @@ impl OccGrid {
     }
     #[inline]
     pub fn pixels_to_position(&self, px: u32, py: u32) -> (f64, f64) {
-        let wx = px as f64 * self.res + self.ox;
-        let wy = (self.img.height() - 1 - py) as f64 * self.res + self.oy;
-        (wx, wy)
+        let x = px as f64 * self.res + self.ox;
+        let y = (self.img.height() - 1 - py) as f64 * self.res + self.oy;
+        (x, y)
     }
     #[inline]
-    pub fn position_to_pixels(&self, wx: f64, wy: f64) -> (u32, u32) {
-        let px = ((wx - self.ox) * self.inv_res) as u32;
-        let py = self.img.height() - 1 - ((wy - self.oy) * self.inv_res) as u32;
+    pub fn position_to_pixels(&self, x: f64, y: f64) -> (u32, u32) {
+        let px = ((x - self.ox) * self.inv_res) as u32;
+        let py = self.img.height() - 1 - ((y - self.oy) * self.inv_res) as u32;
         (px, py)
     }
     #[inline]
@@ -125,14 +126,15 @@ impl OccGrid {
         }
     }
     #[inline]
-    pub fn raycast(&self, x: f64, y: f64, ang: f64, max: f64) -> f64 {
+    pub fn raycast(&self, x: f64, y: f64, ang: f64, max: f64, rng: &mut impl Rng) -> f64 {
         let (dy, dx) = ang.sin_cos();
         let mut t = 0.0;
         while t < max {
             let (px, py) = self.position_to_pixels(x + t * dx, y + t * dy);
             let d = self.edt(px, py);
             if d < self.res {
-                return t;
+                let noise: f64 = rng.sample(rand_distr::StandardNormal);
+                return (t + noise * 0.01).clamp(0.0, max);
             }
             t += d;
         }

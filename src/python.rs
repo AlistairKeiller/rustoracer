@@ -21,6 +21,10 @@ mod rustoracer {
             }
         }
 
+        fn seed(&mut self, seed: u64) {
+            self.sim.seed(seed);
+        }
+
         fn reset<'py>(
             &mut self,
             py: Python<'py>,

@@ -1,3 +1,5 @@
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
 use std::f64::consts::PI;
 
 use crate::car::Car;
@@ -16,6 +18,7 @@ pub struct Sim {
     pub n_beams: usize,
     pub fov: f64,
     pub max_range: f64,
+    pub rng: SmallRng,
 }
 
 impl Sim {
@@ -38,7 +41,11 @@ impl Sim {
             n_beams: 1081,
             fov: 270.0 * PI / 180.0,
             max_range: 30.0,
+            rng: SmallRng::seed_from_u64(0),
         }
+    }
+    pub fn seed(&mut self, seed: u64) {
+        self.rng = SmallRng::seed_from_u64(seed);
     }
     pub fn reset(&mut self, poses: &[[f64; 3]]) -> Obs {
         for (c, p) in self.cars.iter_mut().zip(poses) {
@@ -71,8 +78,9 @@ impl Sim {
         }
         self.observe()
     }
-    pub fn observe(&self) -> Obs {
+    pub fn observe(&mut self) -> Obs {
         let (nb, fov, mr) = (self.n_beams, self.fov, self.max_range);
+        let rng = &mut self.rng;
         let scans: Vec<Vec<f64>> = self
             .cars
             .iter()
@@ -85,6 +93,7 @@ impl Sim {
                             c.y,
                             c.theta - fov / 2.0 + fov * i as f64 / (nb - 1) as f64,
                             mr,
+                            rng,
                         )
                     })
                     .collect()
