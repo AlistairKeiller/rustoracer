@@ -4,35 +4,43 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 from numpy.typing import NDArray
+from gymnasium.vector.utils import batch_space
 from rustoracerpy.rustoracer import PySim
 
 
-class RustoracerEnv(gym.Env):
+class RustoracerEnv(gym.vector.VectorEnv):
     metadata: dict[str, list[str] | int] = {
-        "render_modes": ["human", "rgb_array"],
+        "render_modes": ["rgb_array"],
         "render_fps": 30,
     }
 
     def __init__(
         self,
         yaml: str,
-        init_pose: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        num_envs: int = 1,
         max_steps: int = 10_000,
         render_mode: str | None = None,
     ) -> None:
-        super().__init__()
-        self.render_mode: str | None = render_mode
-        self._sim: PySim = PySim(yaml)
-        self._pose: list[float] = list(init_pose)
+        self._sim: PySim = PySim(yaml, num_envs)
         self._max_steps: int = max_steps
-        self._steps: int = 0
-        self.observation_space: spaces.Space = spaces.Box(
+        self._steps: NDArray[np.int32] = np.zeros(num_envs, dtype=np.int32)
+        self._prev_progress: NDArray[np.float64] = np.zeros(num_envs, dtype=np.float64)
+
+        single_obs_space = spaces.Box(
             0.0, self._sim.max_range, shape=(self._sim.n_beams,), dtype=np.float64
         )
-        self.action_space: spaces.Space = spaces.Box(
+        single_act_space = spaces.Box(
             np.array([-0.4189, 0.0]), np.array([0.4189, 20.0]), dtype=np.float64
         )
-        self.skeleton = self._sim.skeleton
+
+        self.num_envs = num_envs
+        self.render_mode = render_mode
+        self.single_observation_space = single_obs_space
+        self.single_action_space = single_act_space
+        self.observation_space = batch_space(single_obs_space, num_envs)
+        self.action_space = batch_space(single_act_space, num_envs)
+
+        self.skeleton: NDArray[np.float64] = self._sim.skeleton
 
     def reset(
         self,
@@ -40,49 +48,52 @@ class RustoracerEnv(gym.Env):
         seed: int | None = None,
         options: dict | None = None,
     ) -> tuple[NDArray[np.float64], dict[str, NDArray[np.float64]]]:
-        super().reset(seed=seed)
         if seed is not None:
             self._sim.seed(seed)
-        self._steps = 0
-        self._prev_progress = 0.0
-        scan, state, _, progress = self._sim.reset(self._pose)
-        return scan, {"state": state, "progress": progress}
+        self._steps[:] = 0
+        self._prev_progress[:] = 0.0
+        scans, states, _, progress = self._sim.reset()
+        return scans.reshape(self.num_envs, -1), {
+            "state": states.reshape(self.num_envs, -1),
+            "progress": progress,
+        }
 
     def step(
         self,
-        action: NDArray[np.float64],
-    ) -> tuple[NDArray[np.float64], float, bool, bool, dict[str, NDArray[np.float64]]]:
+        actions: NDArray[np.float64],
+    ) -> tuple[
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.bool_],
+        NDArray[np.bool_],
+        dict[str, NDArray],
+    ]:
         self._steps += 1
-        scan, state, col, progress = self._sim.step(float(action[0]), float(action[1]))
-        reward = -1.0 if col else (progress - self._prev_progress) * 100.0 - 0.001
-        self._prev_progress = progress
+        scans, states, cols, progress = self._sim.step(actions.ravel())
+        obs = scans.reshape(self.num_envs, -1)
+
+        dp = progress - self._prev_progress
+        rewards = np.where(cols, -100.0, dp * 100.0 + actions[:, 1] * 0.001 - 0.001)
+        self._prev_progress = progress.copy()
+
+        terminated = cols
+        truncated = self._steps >= self._max_steps
+
         return (
-            scan,
-            reward,
-            col,
-            self._steps >= self._max_steps,
-            {"state": state, "progress": progress},
+            obs,
+            rewards,
+            terminated,
+            truncated,
+            {
+                "state": states.reshape(self.num_envs, -1),
+                "progress": progress,
+            },
         )
 
     def render(self) -> NDArray[np.uint8] | None:
-        rgb: NDArray[np.uint8] = self._sim.render()
-        if self.render_mode == "human":
-            import matplotlib.pyplot as plt
-
-            if not hasattr(self, "_fig"):
-                plt.ion()
-                self._fig, self._ax = plt.subplots()
-                self._img = self._ax.imshow(rgb)
-            else:
-                self._img.set_data(rgb)
-                self._fig.canvas.draw_idle()
-                self._fig.canvas.flush_events()
-            return None
-        return rgb
+        if self.render_mode == "rgb_array":
+            return self._sim.render()
+        return None
 
     def close(self) -> None:
-        if hasattr(self, "_fig"):
-            import matplotlib.pyplot as plt
-
-            plt.close(self._fig)
-            del self._fig
+        pass

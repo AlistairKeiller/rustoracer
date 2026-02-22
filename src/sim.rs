@@ -6,8 +6,8 @@ use crate::car::Car;
 use crate::map::OccGrid;
 
 pub struct Obs {
-    pub scans: Vec<Vec<f64>>,
-    pub state: Vec<[f64; 7]>,
+    pub scans: Vec<f64>,
+    pub state: Vec<f64>,
     pub cols: Vec<bool>,
     pub progress: Vec<f64>,
 }
@@ -52,6 +52,22 @@ impl Sim {
     pub fn seed(&mut self, seed: u64) {
         self.rng = SmallRng::seed_from_u64(seed);
     }
+    pub fn reset_zeros(&mut self) -> Obs {
+        self.waypoint_idx = vec![0; self.cars.len()];
+        self.laps = vec![0; self.cars.len()];
+        for c in self.cars.iter_mut() {
+            *c = Car {
+                x: 0.0,
+                y: 0.0,
+                theta: 0.0,
+                velocity: 0.0,
+                steering: 0.0,
+                yaw_rate: 0.0,
+                slip_angle: 0.0,
+            };
+        }
+        self.observe()
+    }
     pub fn reset(&mut self, poses: &[[f64; 3]]) -> Obs {
         self.waypoint_idx = vec![0; self.cars.len()];
         self.laps = vec![0; self.cars.len()];
@@ -81,8 +97,8 @@ impl Sim {
             slip_angle: 0.0,
         };
     }
-    pub fn step(&mut self, actions: &[[f64; 2]]) -> Obs {
-        for (c, a) in self.cars.iter_mut().zip(actions) {
+    pub fn step(&mut self, actions: &[f64]) -> Obs {
+        for (c, a) in self.cars.iter_mut().zip(actions.chunks(2)) {
             c.step(a[0], a[1], self.dt);
         }
         self.observe()
@@ -90,7 +106,7 @@ impl Sim {
     pub fn observe(&mut self) -> Obs {
         let (nb, fov, mr) = (self.n_beams, self.fov, self.max_range);
         let rng = &mut self.rng;
-        let scans: Vec<Vec<f64>> = self
+        let scans: Vec<f64> = self
             .cars
             .iter()
             .map(|c| {
@@ -105,8 +121,9 @@ impl Sim {
                             rng,
                         )
                     })
-                    .collect()
+                    .collect::<Vec<f64>>()
             })
+            .flatten()
             .collect();
         let n_wps = self.map.ordered_skeleton.len();
         for (i, c) in self.cars.iter().enumerate() {
@@ -134,7 +151,7 @@ impl Sim {
             .zip(self.laps.iter())
             .map(|(&idx, &lap)| idx as f64 / self.map.ordered_skeleton.len() as f64 + lap as f64)
             .collect();
-        let state = self
+        let state: Vec<f64> = self
             .cars
             .iter()
             .map(|c| {
@@ -148,6 +165,7 @@ impl Sim {
                     c.slip_angle,
                 ]
             })
+            .flatten()
             .collect();
         let cols = self.cars.iter().map(|c| self.map.car_collides(c)).collect();
         Obs {

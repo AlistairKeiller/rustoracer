@@ -1,10 +1,12 @@
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3};
+use numpy::{IntoPyArray, PyArray1, PyArray3};
 use pyo3::prelude::*;
 
 use crate::Sim;
 
 #[pymodule]
 mod rustoracer {
+    use numpy::PyReadonlyArray1;
+
     use super::*;
 
     #[pyclass]
@@ -15,9 +17,9 @@ mod rustoracer {
     #[pymethods]
     impl PySim {
         #[new]
-        fn new(yaml: &str) -> Self {
+        fn new(yaml: &str, n: usize) -> Self {
             Self {
-                sim: Sim::new(yaml, 1),
+                sim: Sim::new(yaml, n),
             }
         }
 
@@ -28,29 +30,37 @@ mod rustoracer {
         fn reset<'py>(
             &mut self,
             py: Python<'py>,
-            pose: [f64; 3],
-        ) -> (Bound<'py, PyArray1<f64>>, [f64; 7], bool, f64) {
-            let o = self.sim.reset(&[pose]);
+        ) -> (
+            Bound<'py, PyArray1<f64>>,
+            Bound<'py, PyArray1<f64>>,
+            Bound<'py, PyArray1<bool>>,
+            Bound<'py, PyArray1<f64>>,
+        ) {
+            let o = self.sim.reset_zeros();
             (
-                PyArray1::from_vec(py, o.scans[0].clone()),
-                o.state[0],
-                o.cols[0],
-                o.progress[0],
+                o.scans.into_pyarray(py),
+                o.state.into_pyarray(py),
+                o.cols.into_pyarray(py),
+                o.progress.into_pyarray(py),
             )
         }
 
         fn step<'py>(
             &mut self,
             py: Python<'py>,
-            steer: f64,
-            speed: f64,
-        ) -> (Bound<'py, PyArray1<f64>>, [f64; 7], bool, f64) {
-            let o = self.sim.step(&[[steer, speed]]);
+            actions: PyReadonlyArray1<f64>,
+        ) -> (
+            Bound<'py, PyArray1<f64>>,
+            Bound<'py, PyArray1<f64>>,
+            Bound<'py, PyArray1<bool>>,
+            Bound<'py, PyArray1<f64>>,
+        ) {
+            let o = self.sim.step(actions.as_slice().unwrap());
             (
-                PyArray1::from_vec(py, o.scans[0].clone()),
-                o.state[0],
-                o.cols[0],
-                o.progress[0],
+                o.scans.into_pyarray(py),
+                o.state.into_pyarray(py),
+                o.cols.into_pyarray(py),
+                o.progress.into_pyarray(py),
             )
         }
 
@@ -65,13 +75,15 @@ mod rustoracer {
         }
 
         #[getter]
-        fn skeleton<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-            let pts = self.sim.map.ordered_skeleton.clone();
-            let n = pts.len();
-            let flat: Vec<f64> = pts.into_iter().flat_map(|p| p).collect();
-            numpy::ndarray::Array2::from_shape_vec((n, 2), flat)
-                .unwrap()
-                .into_pyarray(py)
+        fn skeleton<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+            let flat: Vec<f64> = self
+                .sim
+                .map
+                .ordered_skeleton
+                .iter()
+                .flat_map(|p| p.iter().copied())
+                .collect();
+            flat.into_pyarray(py)
         }
 
         fn render<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray3<u8>> {

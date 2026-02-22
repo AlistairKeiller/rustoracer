@@ -5,5 +5,5 @@ __all__ = ["RustoracerEnv"]
 
 register(
     id="Rustoracer-v0",
-    entry_point="rustoracerpy.env:RustoracerEnv",
+    vector_entry_point="rustoracerpy.env:RustoracerEnv",
 )

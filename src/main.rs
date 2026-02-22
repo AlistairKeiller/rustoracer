@@ -14,7 +14,7 @@ fn main() {
     let mut sim = Sim::new("maps/berlin.yaml", 1);
     sim.reset(&[[0.0, 0.0, 0.0]]);
     for _ in 0..1000 {
-        let obs = sim.step(&[[0.0, 1.0]]);
+        let obs = sim.step(&[0.0, 1.0]);
         for (crashed, i) in obs.cols.iter().zip(0..obs.cols.len()) {
             if *crashed {
                 sim.reset_single(&[0.0, 0.0, 0.0], i);
