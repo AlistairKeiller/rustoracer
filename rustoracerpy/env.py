@@ -29,9 +29,9 @@ class RustoracerEnv(gym.vector.VectorEnv):
         single_obs_space = spaces.Box(
             0.0, self._sim.max_range, shape=(self._sim.n_beams,), dtype=np.float64
         )
-        single_act_space = spaces.Box(
-            np.array([-0.4189, 0.0]), np.array([0.4189, 20.0]), dtype=np.float64
-        )
+        self._act_low = np.array([-0.4189, 0.0])
+        self._act_high = np.array([0.4189, 20.0])
+        single_act_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float64)
 
         self.num_envs = num_envs
         self.render_mode = render_mode
@@ -69,11 +69,14 @@ class RustoracerEnv(gym.vector.VectorEnv):
         dict[str, NDArray],
     ]:
         self._steps += 1
-        scans, states, cols, progress = self._sim.step(actions.ravel())
+        actions_rescaled = self._act_low + (actions + 1.0) * 0.5 * (
+            self._act_high - self._act_low
+        )
+        scans, states, cols, progress = self._sim.step(actions_rescaled.ravel())
         obs = scans.reshape(self.num_envs, -1)
 
         dp = progress - self._prev_progress
-        rewards = np.where(cols, -100.0, dp * 100.0 + actions[:, 1] * 0.001 - 0.001)
+        rewards = np.where(cols, -100.0, dp * 100.0 - 0.001)
         self._prev_progress = progress.copy()
 
         terminated = cols
