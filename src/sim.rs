@@ -1,5 +1,5 @@
-use rand::SeedableRng;
 use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
 use std::f64::consts::PI;
 
 use crate::car::Car;
@@ -158,7 +158,12 @@ impl Sim {
         let truncated: Vec<bool> = self.steps.iter().map(|&s| s >= self.max_steps).collect();
         for i in 0..self.cars.len() {
             if terminated[i] || truncated[i] {
-                self.reset_single(&[0.0, 0.0, 0.0], i);
+                let n_wps = self.map.ordered_skeleton.len();
+                let rand_idx = { self.rng.random_range(0..n_wps) };
+                let wp = self.map.ordered_skeleton[rand_idx];
+                let next_wp = self.map.ordered_skeleton[(rand_idx + 1) % n_wps];
+                let theta = (next_wp[1] - wp[1]).atan2(next_wp[0] - wp[0]);
+                self.reset_single(&[wp[0], wp[1], theta], i);
             }
         }
         let state: Vec<f64> = self
