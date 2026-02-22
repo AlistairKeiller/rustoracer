@@ -60,7 +60,7 @@ NUM_ENVS = 16
 
 config = {
     "policy_type": "MlpPolicy",
-    "total_timesteps": 2_5000_000,
+    "total_timesteps": 1e10,
     "env_name": "Rustoracer-v0",
 }
 run = wandb.init(

@@ -92,5 +92,27 @@ mod rustoracer {
                 .unwrap()
                 .into_pyarray(py)
         }
+
+        fn reset_single(&mut self, i: usize) {
+            self.sim.reset_single(&[0.0, 0.0, 0.0], i);
+        }
+
+        fn observe<'py>(
+            &mut self,
+            py: Python<'py>,
+        ) -> (
+            Bound<'py, PyArray1<f64>>,
+            Bound<'py, PyArray1<f64>>,
+            Bound<'py, PyArray1<bool>>,
+            Bound<'py, PyArray1<f64>>,
+        ) {
+            let o = self.sim.observe();
+            (
+                o.scans.into_pyarray(py),
+                o.state.into_pyarray(py),
+                o.cols.into_pyarray(py),
+                o.progress.into_pyarray(py),
+            )
+        }
     }
 }

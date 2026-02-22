@@ -78,6 +78,20 @@ class RustoracerEnv(gym.vector.VectorEnv):
 
         terminated = cols
         truncated = self._steps >= self._max_steps
+        dones = terminated | truncated
+
+        for i in range(self.num_envs):
+            if dones[i]:
+                self._sim.reset_single(i)
+                self._steps[i] = 0
+                self._prev_progress[i] = 0.0
+                new_scans, new_states, _, new_progress = self._sim.observe()
+                new_scans = new_scans.reshape(self.num_envs, -1)
+                new_states = new_states.reshape(self.num_envs, -1)
+                obs[i] = new_scans[i]
+                states = states.reshape(self.num_envs, -1)
+                states[i] = new_states[i]
+                progress[i] = new_progress[i]
 
         return (
             obs,
