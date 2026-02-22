@@ -44,10 +44,11 @@ class RustoracerEnv(gym.Env):
         if seed is not None:
             self._sim.seed(seed)
         self._steps = 0
+        self._prev_progress = 0.0
         scan: NDArray[np.float64]
         state: NDArray[np.float64]
-        scan, state, _ = self._sim.reset(self._pose)
-        return scan, {"state": state}
+        scan, state, _, progress, laps = self._sim.reset(self._pose)
+        return scan, {"state": state, "progress": progress, "laps": laps}
 
     def step(
         self,
@@ -57,9 +58,20 @@ class RustoracerEnv(gym.Env):
         scan: NDArray[np.float64]
         state: NDArray[np.float64]
         col: bool
-        scan, state, col = self._sim.step(float(action[0]), float(action[1]))
+        scan, state, col, progress, laps = self._sim.step(
+            float(action[0]), float(action[1])
+        )
+        delta = (progress - self._prev_progress) % 1.0
+        self._prev_progress = progress
+        reward = -10.0 if col else delta * 100.0
         reward: float = -10.0 if col else float(action[1]) / 10
-        return scan, reward, col, self._steps >= self._max_steps, {"state": state}
+        return (
+            scan,
+            reward,
+            col,
+            self._steps >= self._max_steps,
+            {"state": state, "progress": progress, "laps": laps},
+        )
 
     def render(self) -> NDArray[np.uint8] | None:
         rgb: NDArray[np.uint8] = self._sim.render()

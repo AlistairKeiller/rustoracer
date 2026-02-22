@@ -29,12 +29,14 @@ mod rustoracer {
             &mut self,
             py: Python<'py>,
             pose: [f64; 3],
-        ) -> (Bound<'py, PyArray1<f64>>, [f64; 7], bool) {
+        ) -> (Bound<'py, PyArray1<f64>>, [f64; 7], bool, f64, u32) {
             let o = self.sim.reset(&[pose]);
             (
                 PyArray1::from_vec(py, o.scans[0].clone()),
                 o.state[0],
                 o.cols[0],
+                o.progress[0],
+                o.laps[0],
             )
         }
 
@@ -43,12 +45,14 @@ mod rustoracer {
             py: Python<'py>,
             steer: f64,
             speed: f64,
-        ) -> (Bound<'py, PyArray1<f64>>, [f64; 7], bool) {
+        ) -> (Bound<'py, PyArray1<f64>>, [f64; 7], bool, f64, u32) {
             let o = self.sim.step(&[[steer, speed]]);
             (
                 PyArray1::from_vec(py, o.scans[0].clone()),
                 o.state[0],
                 o.cols[0],
+                o.progress[0],
+                o.laps[0],
             )
         }
 

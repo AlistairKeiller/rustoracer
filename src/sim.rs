@@ -9,6 +9,8 @@ pub struct Obs {
     pub scans: Vec<Vec<f64>>,
     pub state: Vec<[f64; 7]>,
     pub cols: Vec<bool>,
+    pub progress: Vec<f64>,
+    pub laps: Vec<u32>,
 }
 
 pub struct Sim {
@@ -19,6 +21,8 @@ pub struct Sim {
     pub fov: f64,
     pub max_range: f64,
     pub rng: SmallRng,
+    pub waypoint_idx: Vec<usize>,
+    pub laps: Vec<u32>,
 }
 
 impl Sim {
@@ -42,12 +46,16 @@ impl Sim {
             fov: 270.0 * PI / 180.0,
             max_range: 30.0,
             rng: SmallRng::seed_from_u64(0),
+            waypoint_idx: vec![0; n],
+            laps: vec![0; n],
         }
     }
     pub fn seed(&mut self, seed: u64) {
         self.rng = SmallRng::seed_from_u64(seed);
     }
     pub fn reset(&mut self, poses: &[[f64; 3]]) -> Obs {
+        self.waypoint_idx = vec![0; self.cars.len()];
+        self.laps = vec![0; self.cars.len()];
         for (c, p) in self.cars.iter_mut().zip(poses) {
             *c = Car {
                 x: p[0],
@@ -62,6 +70,8 @@ impl Sim {
         self.observe()
     }
     pub fn reset_single(&mut self, pose: &[f64; 3], i: usize) {
+        self.waypoint_idx[i] = 0;
+        self.laps[i] = 0;
         self.cars[i] = Car {
             x: pose[0],
             y: pose[1],
@@ -99,6 +109,30 @@ impl Sim {
                     .collect()
             })
             .collect();
+        let n_wps = self.map.ordered_skeleton.len();
+        for (i, c) in self.cars.iter().enumerate() {
+            let prev = self.waypoint_idx[i];
+            let search = 50.min(n_wps);
+            let nearest = (0..search)
+                .min_by(|&a, &b| {
+                    let wp_a = self.map.ordered_skeleton[(prev + a) % n_wps];
+                    let wp_b = self.map.ordered_skeleton[(prev + b) % n_wps];
+                    let da = (wp_a[0] - c.x).powi(2) + (wp_a[1] - c.y).powi(2);
+                    let db = (wp_b[0] - c.x).powi(2) + (wp_b[1] - c.y).powi(2);
+                    da.partial_cmp(&db).unwrap()
+                })
+                .unwrap();
+            let new_idx = (prev + nearest) % n_wps;
+            if prev > n_wps * 3 / 4 && new_idx < n_wps / 4 {
+                self.laps[i] += 1;
+            }
+            self.waypoint_idx[i] = new_idx;
+        }
+        let progress: Vec<f64> = self
+            .waypoint_idx
+            .iter()
+            .map(|&idx| idx as f64 / n_wps as f64)
+            .collect();
         let state = self
             .cars
             .iter()
@@ -115,6 +149,12 @@ impl Sim {
             })
             .collect();
         let cols = self.cars.iter().map(|c| self.map.car_collides(c)).collect();
-        Obs { scans, state, cols }
+        Obs {
+            scans,
+            state,
+            cols,
+            progress,
+            laps: self.laps.clone(),
+        }
     }
 }
