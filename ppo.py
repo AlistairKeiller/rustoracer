@@ -6,6 +6,7 @@ from stable_baselines3.common.vec_env import VecEnv, VecMonitor, VecVideoRecorde
 import wandb
 from wandb.integration.sb3 import WandbCallback
 from rustoracerpy.env import RustoracerEnv
+import gc
 
 
 class SB3VecAdapter(VecEnv):
@@ -18,6 +19,7 @@ class SB3VecAdapter(VecEnv):
             observation_space=venv.single_observation_space,
             action_space=venv.single_action_space,
         )
+        self.metadata = venv.metadata
         self._actions: np.ndarray | None = None
 
     def reset(self) -> np.ndarray:
@@ -74,7 +76,15 @@ env = SB3VecAdapter(
     RustoracerEnv(yaml="maps/berlin.yaml", num_envs=NUM_ENVS, render_mode="rgb_array")
 )
 env = VecMonitor(env)
-env = VecVideoRecorder(
+
+
+class GCVecVideoRecorder(VecVideoRecorder):
+    def _stop_recording(self) -> None:
+        super()._stop_recording()
+        gc.collect()
+
+
+env = GCVecVideoRecorder(
     env,
     f"videos/{run.id}",
     record_video_trigger=lambda x: x % 10_000 == 0,
