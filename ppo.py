@@ -1,26 +1,45 @@
-import gymnasium as gym
 import rustoracerpy
+import gymnasium as gym
 from stable_baselines3 import PPO
-import numpy as np
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv, VecVideoRecorder
+import wandb
+from wandb.integration.sb3 import WandbCallback
 
-env = gym.make("Rustoracer-v0", yaml="maps/berlin.yaml")
-model = PPO(
-    "MlpPolicy",
-    env,
-    verbose=1,
-    n_steps=4096,
+
+config = {
+    "policy_type": "MlpPolicy",
+    "total_timesteps": 2_5000_000,
+    "env_name": "Rustoracer-v0",
+}
+run = wandb.init(
+    project="sb3",
+    config=config,
+    sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+    monitor_gym=True,  # auto-upload the videos of agents playing the game
 )
-model.learn(total_timesteps=5_000_000)
-model.save("racer_ppo")
-env.close()
 
-env = gym.make("Rustoracer-v0", yaml="maps/berlin.yaml", render_mode="human")
-model = PPO.load("racer_ppo")
 
-obs, info = env.reset()
-while True:
-    action = model.predict(obs, deterministic=True)[0]
-    obs, reward, terminated, truncated, info = env.step(action)
-    env.render()
-    if terminated or truncated:
-        obs, info = env.reset()
+def make_env():
+    env = gym.make(config["env_name"], yaml="maps/berlin.yaml", render_mode="rgb_array")
+    env = Monitor(env)  # record stats such as returns
+    return env
+
+
+env = DummyVecEnv([make_env])
+env = VecVideoRecorder(
+    env,
+    f"videos/{run.id}",
+    record_video_trigger=lambda x: x % 100_000 == 0,
+    video_length=1_000,
+)
+model = PPO(config["policy_type"], env, verbose=1, tensorboard_log=f"runs/{run.id}")
+model.learn(
+    total_timesteps=config["total_timesteps"],
+    callback=WandbCallback(
+        gradient_save_freq=100,
+        model_save_path=f"models/{run.id}",
+        verbose=2,
+    ),
+)
+run.finish()

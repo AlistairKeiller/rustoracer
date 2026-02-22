@@ -12,7 +12,11 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
-dependencies = ["gymnasium>=1.1.1", "matplotlib>=3.10.8", "numpy>=2.4.2"]
+dependencies = [
+    "gymnasium>=1.1.1",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.2",
+]
 
 [tool.maturin]
 module-name = "rustoracerpy.rustoracer"

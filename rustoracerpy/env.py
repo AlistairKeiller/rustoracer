@@ -30,7 +30,7 @@ class RustoracerEnv(gym.Env):
             0.0, self._sim.max_range, shape=(self._sim.n_beams,), dtype=np.float64
         )
         self.action_space: spaces.Space = spaces.Box(
-            np.array([-0.4189, 0.0]), np.array([0.4189, 10.0]), dtype=np.float64
+            np.array([-0.4189, 0.0]), np.array([0.4189, 20.0]), dtype=np.float64
         )
         self.skeleton = self._sim.skeleton
 
@@ -45,32 +45,23 @@ class RustoracerEnv(gym.Env):
             self._sim.seed(seed)
         self._steps = 0
         self._prev_progress = 0.0
-        scan: NDArray[np.float64]
-        state: NDArray[np.float64]
-        scan, state, _, progress, laps = self._sim.reset(self._pose)
-        return scan, {"state": state, "progress": progress, "laps": laps}
+        scan, state, _, progress = self._sim.reset(self._pose)
+        return scan, {"state": state, "progress": progress}
 
     def step(
         self,
         action: NDArray[np.float64],
     ) -> tuple[NDArray[np.float64], float, bool, bool, dict[str, NDArray[np.float64]]]:
         self._steps += 1
-        scan: NDArray[np.float64]
-        state: NDArray[np.float64]
-        col: bool
-        scan, state, col, progress, laps = self._sim.step(
-            float(action[0]), float(action[1])
-        )
-        delta = (progress - self._prev_progress) % 1.0
+        scan, state, col, progress = self._sim.step(float(action[0]), float(action[1]))
+        reward = -1.0 if col else (progress - self._prev_progress) * 100.0 - 0.001
         self._prev_progress = progress
-        reward = -10.0 if col else delta * 100.0
-        reward: float = -10.0 if col else float(action[1]) / 10
         return (
             scan,
             reward,
             col,
             self._steps >= self._max_steps,
-            {"state": state, "progress": progress, "laps": laps},
+            {"state": state, "progress": progress},
         )
 
     def render(self) -> NDArray[np.uint8] | None:

@@ -10,7 +10,6 @@ pub struct Obs {
     pub state: Vec<[f64; 7]>,
     pub cols: Vec<bool>,
     pub progress: Vec<f64>,
-    pub laps: Vec<u32>,
 }
 
 pub struct Sim {
@@ -22,7 +21,7 @@ pub struct Sim {
     pub max_range: f64,
     pub rng: SmallRng,
     pub waypoint_idx: Vec<usize>,
-    pub laps: Vec<u32>,
+    pub laps: Vec<i32>,
 }
 
 impl Sim {
@@ -111,27 +110,29 @@ impl Sim {
             .collect();
         let n_wps = self.map.ordered_skeleton.len();
         for (i, c) in self.cars.iter().enumerate() {
-            let prev = self.waypoint_idx[i];
-            let search = 50.min(n_wps);
-            let nearest = (0..search)
+            let prev_idx = self.waypoint_idx[i];
+            let nearest = (0..n_wps)
                 .min_by(|&a, &b| {
-                    let wp_a = self.map.ordered_skeleton[(prev + a) % n_wps];
-                    let wp_b = self.map.ordered_skeleton[(prev + b) % n_wps];
+                    let wp_a = self.map.ordered_skeleton[a];
+                    let wp_b = self.map.ordered_skeleton[b];
                     let da = (wp_a[0] - c.x).powi(2) + (wp_a[1] - c.y).powi(2);
                     let db = (wp_b[0] - c.x).powi(2) + (wp_b[1] - c.y).powi(2);
                     da.partial_cmp(&db).unwrap()
                 })
                 .unwrap();
-            let new_idx = (prev + nearest) % n_wps;
-            if prev > n_wps * 3 / 4 && new_idx < n_wps / 4 {
+            let new_idx = nearest;
+            if prev_idx > n_wps * 3 / 4 && new_idx < n_wps / 4 {
                 self.laps[i] += 1;
+            } else if prev_idx < n_wps / 4 && new_idx > n_wps * 3 / 4 {
+                self.laps[i] -= 1;
             }
             self.waypoint_idx[i] = new_idx;
         }
         let progress: Vec<f64> = self
             .waypoint_idx
             .iter()
-            .map(|&idx| idx as f64 / n_wps as f64)
+            .zip(self.laps.iter())
+            .map(|(&idx, &lap)| idx as f64 / self.map.ordered_skeleton.len() as f64 + lap as f64)
             .collect();
         let state = self
             .cars
@@ -154,7 +155,6 @@ impl Sim {
             state,
             cols,
             progress,
-            laps: self.laps.clone(),
         }
     }
 }

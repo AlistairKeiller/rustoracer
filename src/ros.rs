@@ -73,7 +73,7 @@ impl RosBridge {
 
             let mut tfs = Vec::new();
             for i in 0..n {
-                let [x, y, th] = obs.poses[i];
+                let [x, y, th, _, _, _, _] = obs.state[i];
                 let v = self.sim.cars[i].velocity;
                 let frame = if n == 1 {
                     "base_footprint".into()

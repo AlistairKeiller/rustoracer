@@ -1,4 +1,9 @@
 # Install instructions
+## RL
+```bash
+uv run --with stable-baselines3 --with wandb --with tensorboard --with gymnasium[other] ppo.py
+```
+
 ## Devcontainer
 Rebuild and reopen in container
 ## Starting up scripts
