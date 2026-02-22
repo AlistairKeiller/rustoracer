@@ -11,7 +11,7 @@ from rustoracerpy.rustoracer import PySim
 class RustoracerEnv(gym.vector.VectorEnv):
     metadata: dict[str, list[str] | int] = {
         "render_modes": ["rgb_array"],
-        "render_fps": 30,
+        "render_fps": 100,
     }
 
     def __init__(
