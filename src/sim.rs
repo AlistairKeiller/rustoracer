@@ -146,6 +146,8 @@ impl Sim {
             .flatten()
             .collect();
         let n_wps = self.map.ordered_skeleton.len();
+        let terminated: Vec<bool> = self.cars.iter().map(|c| self.map.car_collides(c)).collect();
+        let truncated: Vec<bool> = self.steps.iter().map(|&s| s >= self.max_steps).collect();
         let rewards: Vec<f64> = (0..self.cars.len())
             .map(|i| {
                 let prev_idx = self.waypoint_idx[i];
@@ -157,11 +159,10 @@ impl Sim {
                 } else if delta < -(n_wps as f64 / 2.0) {
                     delta += n_wps as f64;
                 }
-                delta
+                delta / n_wps as f64 * 100.0 - if terminated[i] { 100.0 } else { 0.0 } - 0.001
             })
             .collect();
-        let terminated: Vec<bool> = self.cars.iter().map(|c| self.map.car_collides(c)).collect();
-        let truncated: Vec<bool> = self.steps.iter().map(|&s| s >= self.max_steps).collect();
+
         for i in 0..self.cars.len() {
             if terminated[i] || truncated[i] {
                 let n_wps = self.map.ordered_skeleton.len();
