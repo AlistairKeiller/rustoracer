@@ -55,8 +55,19 @@ impl Sim {
     pub fn seed(&mut self, seed: u64) {
         self.rng = SmallRng::seed_from_u64(seed);
     }
+    fn nearest_waypoint(&self, x: f64, y: f64) -> usize {
+        let n_wps = self.map.ordered_skeleton.len();
+        (0..n_wps)
+            .min_by(|&a, &b| {
+                let wa = self.map.ordered_skeleton[a];
+                let wb = self.map.ordered_skeleton[b];
+                let da = (wa[0] - x).powi(2) + (wa[1] - y).powi(2);
+                let db = (wb[0] - x).powi(2) + (wb[1] - y).powi(2);
+                da.partial_cmp(&db).unwrap()
+            })
+            .unwrap_or(0)
+    }
     pub fn reset_zeros(&mut self) -> Obs {
-        self.waypoint_idx = vec![0; self.cars.len()];
         self.steps = vec![0; self.cars.len()];
         for c in self.cars.iter_mut() {
             *c = Car {
@@ -69,10 +80,11 @@ impl Sim {
                 slip_angle: 0.0,
             };
         }
+        let nearest = self.nearest_waypoint(0.0, 0.0);
+        self.waypoint_idx = vec![nearest; self.cars.len()];
         self.observe()
     }
     pub fn reset(&mut self, poses: &[[f64; 3]]) -> Obs {
-        self.waypoint_idx = vec![0; self.cars.len()];
         self.steps = vec![0; self.cars.len()];
         for (c, p) in self.cars.iter_mut().zip(poses) {
             *c = Car {
@@ -85,10 +97,14 @@ impl Sim {
                 slip_angle: 0.0,
             };
         }
+        self.waypoint_idx = self
+            .cars
+            .iter()
+            .map(|c| self.nearest_waypoint(c.x, c.y))
+            .collect();
         self.observe()
     }
     pub fn reset_single(&mut self, pose: &[f64; 3], i: usize) {
-        self.waypoint_idx[i] = 0;
         self.steps[i] = 0;
         self.cars[i] = Car {
             x: pose[0],
@@ -99,6 +115,7 @@ impl Sim {
             yaw_rate: 0.0,
             slip_angle: 0.0,
         };
+        self.waypoint_idx[i] = self.nearest_waypoint(pose[0], pose[1]);
     }
     pub fn step(&mut self, actions: &[f64]) -> Obs {
         for (c, a) in self.cars.iter_mut().zip(actions.chunks(2)) {
@@ -129,21 +146,10 @@ impl Sim {
             .flatten()
             .collect();
         let n_wps = self.map.ordered_skeleton.len();
-        let rewards: Vec<f64> = self
-            .cars
-            .iter()
-            .enumerate()
-            .map(|(i, c)| {
+        let rewards: Vec<f64> = (0..self.cars.len())
+            .map(|i| {
                 let prev_idx = self.waypoint_idx[i];
-                let nearest = (0..n_wps)
-                    .min_by(|&a, &b| {
-                        let wp_a = self.map.ordered_skeleton[a];
-                        let wp_b = self.map.ordered_skeleton[b];
-                        let da = (wp_a[0] - c.x).powi(2) + (wp_a[1] - c.y).powi(2);
-                        let db = (wp_b[0] - c.x).powi(2) + (wp_b[1] - c.y).powi(2);
-                        da.partial_cmp(&db).unwrap()
-                    })
-                    .unwrap();
+                let nearest = self.nearest_waypoint(self.cars[i].x, self.cars[i].y);
                 self.waypoint_idx[i] = nearest;
                 let mut delta = nearest as f64 - prev_idx as f64;
                 if delta > n_wps as f64 / 2.0 {
