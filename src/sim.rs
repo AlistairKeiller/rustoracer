@@ -63,7 +63,7 @@ impl Sim {
                 let wb = self.map.ordered_skeleton[b];
                 let da = (wa[0] - x).powi(2) + (wa[1] - y).powi(2);
                 let db = (wb[0] - x).powi(2) + (wb[1] - y).powi(2);
-                da.partial_cmp(&db).unwrap()
+                da.total_cmp(&db)
             })
             .unwrap_or(0)
     }
