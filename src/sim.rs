@@ -1,5 +1,6 @@
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
+use rayon::prelude::*;
 use std::f64::consts::PI;
 
 use crate::car::Car;
@@ -43,7 +44,7 @@ impl Sim {
                 n
             ],
             dt: 1.0 / 60.0,
-            n_beams: 1081,
+            n_beams: 108,
             fov: 270.0 * PI / 180.0,
             max_range: 30.0,
             rng: SmallRng::seed_from_u64(0),
@@ -157,10 +158,9 @@ impl Sim {
         }
 
         let (nb, fov, mr) = (self.n_beams, self.fov, self.max_range);
-        let rng = &mut self.rng;
         let scans: Vec<f64> = self
             .cars
-            .iter()
+            .par_iter()
             .flat_map(|c| {
                 (0..nb)
                     .map(|i| {
@@ -169,7 +169,6 @@ impl Sim {
                             c.y,
                             c.theta - fov / 2.0 + fov * i as f64 / (nb - 1) as f64,
                             mr,
-                            rng,
                         )
                     })
                     .chain([c.velocity, c.steering])

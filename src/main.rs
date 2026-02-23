@@ -13,7 +13,7 @@ use crate::sim::Sim;
 fn main() {
     let mut sim = Sim::new("maps/berlin.yaml", 1, 10_000);
     sim.reset(&[[0.0, 0.0, 0.0]]);
-    for _ in 0..1000 {
+    for _ in 0..100_000 {
         let obs = sim.step(&[0.0, 1.0]);
     }
 }

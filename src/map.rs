@@ -126,15 +126,14 @@ impl OccGrid {
         }
     }
     #[inline]
-    pub fn raycast(&self, x: f64, y: f64, ang: f64, max: f64, rng: &mut impl Rng) -> f64 {
+    pub fn raycast(&self, x: f64, y: f64, ang: f64, max: f64) -> f64 {
         let (dy, dx) = ang.sin_cos();
         let mut t = 0.0;
         while t < max {
             let (px, py) = self.position_to_pixels(x + t * dx, y + t * dy);
             let d = self.edt(px, py);
             if d < self.res {
-                let noise: f64 = rng.sample(rand_distr::StandardNormal);
-                return (t + noise * 0.01).clamp(0.0, max);
+                return t;
             }
             t += d;
         }
