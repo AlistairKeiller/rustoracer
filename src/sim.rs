@@ -175,7 +175,7 @@ impl Sim {
             .zip(self.buf_rewards.par_iter_mut())
             .zip(self.cars.par_iter_mut())
             .zip(self.waypoint_idx.par_iter_mut())
-            .zip(self.steps.par_iter())
+            .zip(self.steps.par_iter_mut())
             .zip(self.buf_scans.par_chunks_mut(n_beams + 2))
             .zip(self.buf_state.par_chunks_mut(7))
             .zip(random_resets.par_iter())
@@ -211,6 +211,7 @@ impl Sim {
                     *reward = delta / n_wps as f64 * 100.0 - if *terminated { 100.0 } else { 0.0 };
 
                     if *terminated || *truncated {
+                        *step = 0;
                         *car = Car {
                             x: reset[0],
                             y: reset[1],
