@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -18,6 +21,74 @@ import torch.optim as optim
 from torch.distributions import Normal
 
 from rustoracerpy import RustoracerEnv
+
+
+def record_rollout(
+    env: RustoracerEnv,
+    agent: Agent,
+    obs_rms: RunningMeanStd,
+    device: torch.device,
+    path: str | Path,
+    max_frames: int = 600,  # 10 s at 60 fps
+) -> None:
+    """Run one deterministic episode and write an MP4 via ffmpeg."""
+    obs, _ = env.reset()
+    obs_n = obs_rms.normalize(obs)
+    frames: list[np.ndarray] = []
+
+    for _ in range(max_frames):
+        frame = env.render()
+        if frame is not None:
+            frames.append(frame)
+
+        with torch.no_grad():
+            obs_t = torch.tensor(obs_n, dtype=torch.float32, device=device)
+            act = agent.actor_mean(obs_t).cpu().numpy()
+        act = np.clip(act, -1.0, 1.0).astype(np.float64)
+
+        obs, _, term, trunc, _ = env.step(act)
+        obs_n = obs_rms.normalize(obs)
+        if term[0] or trunc[0]:
+            break
+
+    if not frames:
+        return
+
+    h, w, _ = frames[0].shape
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    proc = subprocess.Popen(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            f"{w}x{h}",
+            "-r",
+            "60",
+            "-i",
+            "pipe:",
+            "-vcodec",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "23",
+            str(path),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    for f in frames:
+        proc.stdin.write(f.tobytes())
+    proc.stdin.close()
+    proc.wait()
+    print(f"  🎬  {path} ({len(frames)} frames)")
 
 
 # ━━━━━━━━━━━━━━━━━━━━  hyper-parameters  ━━━━━━━━━━━━━━━━━━━━━━━━
@@ -54,6 +125,9 @@ class Config:
     log_interval: int = 1
     save_interval: int = 50
     save_dir: str = "checkpoints"
+
+    video_interval: int = 25  # record every N updates (0 = off)
+    video_dir: str = "videos"
 
 
 # ━━━━━━━━━━━━  running mean / std (Welford, CPU f64)  ━━━━━━━━━━━
@@ -217,6 +291,13 @@ def train(cfg: Config) -> None:
     os.makedirs(cfg.save_dir, exist_ok=True)
     global_step = 0
     t0 = time.time()
+
+    rec_env = RustoracerEnv(
+        yaml=cfg.map_yaml,
+        num_envs=1,
+        max_steps=cfg.max_ep_steps,
+        render_mode="rgb_array",
+    )
 
     # ═══════════════════  outer loop  ════════════════════════════
     for update in range(1, num_updates + 1):
@@ -412,6 +493,18 @@ def train(cfg: Config) -> None:
                 f"lr {optimizer.param_groups[0]['lr']:.1e}"
                 f"{'  ⚠KL-STOP' if kl_early_stopped else ''}"
             )
+
+        # ── video ────────────────────────────────────────────────
+        if cfg.video_interval > 0 and update % cfg.video_interval == 0:
+            agent.eval()
+            record_rollout(
+                rec_env,
+                agent,
+                obs_rms,
+                device,
+                path=f"{cfg.video_dir}/update_{update:05d}.mp4",
+            )
+            agent.train()
 
         # ── checkpoint ───────────────────────────────────────────
         if update % cfg.save_interval == 0:
