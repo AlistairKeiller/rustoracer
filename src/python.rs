@@ -66,7 +66,7 @@ mod rustoracer {
                 .flat_map(|a| {
                     [
                         STEER_MIN + (a[0] + 1.0) * 0.5 * (STEER_MAX - STEER_MIN),
-                        V_MIN + (a[1] + 1.0) * 0.5 * (V_MAX - V_MIN),
+                        1.0 + (a[1] + 1.0) * 0.5 * (V_MAX - 1.0),
                     ]
                 })
                 .collect();

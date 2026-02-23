@@ -76,19 +76,26 @@ fn kinematic_dynamics(s: &State, a: f64, sv: f64) -> State {
 fn dynamic_dynamics(s: &State, a: f64, sv: f64) -> State {
     let [_, _, steer, vx, yaw, yr, slip] = *s;
 
+    let vx_safe = if vx >= 0.0 {
+        vx.max(V_KIN_THRESHOLD)
+    } else {
+        vx.min(-V_KIN_THRESHOLD)
+    };
+
     let rear_load = G * LF + a * H;
     let front_load = G * LR - a * H;
 
-    let yaw_acc = -MU * MASS / (vx * I_Z * LWB)
+    let yaw_acc = -MU * MASS / (vx_safe * I_Z * LWB)
         * (LF * LF * C_SF * front_load + LR * LR * C_SR * rear_load)
         * yr
         + MU * MASS / (I_Z * LWB) * (LR * C_SR * rear_load - LF * C_SF * front_load) * slip
         + MU * MASS / (I_Z * LWB) * LF * C_SF * front_load * steer;
 
-    let slip_rate = (MU / (vx * vx * LWB) * (C_SR * rear_load * LR - C_SF * front_load * LF) - 1.0)
-        * yr
-        - MU / (vx * LWB) * (C_SR * rear_load + C_SF * front_load) * slip
-        + MU / (vx * LWB) * C_SF * front_load * steer;
+    let slip_rate =
+        (MU / (vx_safe * vx_safe * LWB) * (C_SR * rear_load * LR - C_SF * front_load * LF) - 1.0)
+            * yr
+            - MU / (vx_safe * LWB) * (C_SR * rear_load + C_SF * front_load) * slip
+            + MU / (vx_safe * LWB) * C_SF * front_load * steer;
 
     [
         vx * (slip + yaw).cos(), // ẋ

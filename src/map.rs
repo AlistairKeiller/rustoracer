@@ -158,6 +158,9 @@ impl OccGrid {
     }
 
     pub fn car_collides(&self, car: &Car) -> bool {
+        if !car.x.is_finite() || !car.y.is_finite() || !car.theta.is_finite() {
+            return true;
+        }
         self.car_pixels(car)
             .into_iter()
             .any(|(x, y)| self.edt(x, y) < self.res)

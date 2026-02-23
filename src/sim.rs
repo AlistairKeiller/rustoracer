@@ -121,9 +121,41 @@ impl Sim {
         for (c, a) in self.cars.iter_mut().zip(actions.chunks(2)) {
             c.step(a[0], a[1], self.dt);
         }
+        for s in self.steps.iter_mut() {
+            *s += 1;
+        }
         self.observe()
     }
     pub fn observe(&mut self) -> Obs {
+        let n_wps = self.map.ordered_skeleton.len();
+
+        let terminated: Vec<bool> = self.cars.iter().map(|c| self.map.car_collides(c)).collect();
+        let truncated: Vec<bool> = self.steps.iter().map(|&s| s >= self.max_steps).collect();
+        let rewards: Vec<f64> = (0..self.cars.len())
+            .map(|i| {
+                let prev_idx = self.waypoint_idx[i];
+                let nearest = self.nearest_waypoint(self.cars[i].x, self.cars[i].y);
+                self.waypoint_idx[i] = nearest;
+                let mut delta = nearest as f64 - prev_idx as f64;
+                if delta > n_wps as f64 / 2.0 {
+                    delta -= n_wps as f64;
+                } else if delta < -(n_wps as f64 / 2.0) {
+                    delta += n_wps as f64;
+                }
+                delta / n_wps as f64 * 100.0 - if terminated[i] { 100.0 } else { 0.0 }
+            })
+            .collect();
+
+        for i in 0..self.cars.len() {
+            if terminated[i] || truncated[i] {
+                let rand_idx = { self.rng.random_range(0..n_wps) };
+                let wp = self.map.ordered_skeleton[rand_idx];
+                let next_wp = self.map.ordered_skeleton[(rand_idx + 1) % n_wps];
+                let theta = (next_wp[1] - wp[1]).atan2(next_wp[0] - wp[0]);
+                self.reset_single(&[wp[0], wp[1], theta], i);
+            }
+        }
+
         let (nb, fov, mr) = (self.n_beams, self.fov, self.max_range);
         let rng = &mut self.rng;
         let scans: Vec<f64> = self
@@ -145,34 +177,6 @@ impl Sim {
             })
             .flatten()
             .collect();
-        let n_wps = self.map.ordered_skeleton.len();
-        let terminated: Vec<bool> = self.cars.iter().map(|c| self.map.car_collides(c)).collect();
-        let truncated: Vec<bool> = self.steps.iter().map(|&s| s >= self.max_steps).collect();
-        let rewards: Vec<f64> = (0..self.cars.len())
-            .map(|i| {
-                let prev_idx = self.waypoint_idx[i];
-                let nearest = self.nearest_waypoint(self.cars[i].x, self.cars[i].y);
-                self.waypoint_idx[i] = nearest;
-                let mut delta = nearest as f64 - prev_idx as f64;
-                if delta > n_wps as f64 / 2.0 {
-                    delta -= n_wps as f64;
-                } else if delta < -(n_wps as f64 / 2.0) {
-                    delta += n_wps as f64;
-                }
-                delta / n_wps as f64 * 100.0 - if terminated[i] { 100.0 } else { 0.0 } - 0.001
-            })
-            .collect();
-
-        for i in 0..self.cars.len() {
-            if terminated[i] || truncated[i] {
-                let n_wps = self.map.ordered_skeleton.len();
-                let rand_idx = { self.rng.random_range(0..n_wps) };
-                let wp = self.map.ordered_skeleton[rand_idx];
-                let next_wp = self.map.ordered_skeleton[(rand_idx + 1) % n_wps];
-                let theta = (next_wp[1] - wp[1]).atan2(next_wp[0] - wp[0]);
-                self.reset_single(&[wp[0], wp[1], theta], i);
-            }
-        }
         let state: Vec<f64> = self
             .cars
             .iter()
