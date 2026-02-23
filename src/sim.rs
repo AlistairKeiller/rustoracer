@@ -42,7 +42,7 @@ impl Sim {
                 };
                 n
             ],
-            dt: 0.01,
+            dt: 1.0 / 60.0,
             n_beams: 1081,
             fov: 270.0 * PI / 180.0,
             max_range: 30.0,
@@ -161,9 +161,8 @@ impl Sim {
         let scans: Vec<f64> = self
             .cars
             .iter()
-            .map(|c| {
+            .flat_map(|c| {
                 (0..nb)
-                    .into_iter()
                     .map(|i| {
                         self.map.raycast(
                             c.x,
@@ -173,9 +172,9 @@ impl Sim {
                             rng,
                         )
                     })
+                    .chain([c.velocity, c.steering])
                     .collect::<Vec<f64>>()
             })
-            .flatten()
             .collect();
         let state: Vec<f64> = self
             .cars

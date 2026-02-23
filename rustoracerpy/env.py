@@ -11,7 +11,7 @@ from rustoracerpy.rustoracer import PySim
 class RustoracerEnv(gym.vector.VectorEnv):
     metadata: dict[str, list[str] | int] = {
         "render_modes": ["rgb_array"],
-        "render_fps": 100,
+        "render_fps": 60,
     }
 
     def __init__(
@@ -24,7 +24,9 @@ class RustoracerEnv(gym.vector.VectorEnv):
         self._sim: PySim = PySim(yaml, num_envs, max_steps)
 
         single_obs_space = spaces.Box(
-            0.0, self._sim.max_range, shape=(self._sim.n_beams,), dtype=np.float64
+            np.array([0.0] * self._sim.n_beams + [-5.0, -0.5]),
+            np.array([self._sim.max_range] * self._sim.n_beams + [20.0, 0.5]),
+            dtype=np.float64,
         )
         single_act_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float64)
 
