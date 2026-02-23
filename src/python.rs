@@ -1,4 +1,4 @@
-use numpy::{IntoPyArray, PyArray1, PyArray3};
+use numpy::{IntoPyArray, PyArray1, PyArray3, ToPyArray};
 use pyo3::prelude::*;
 
 use crate::Sim;
@@ -41,11 +41,11 @@ mod rustoracer {
         ) {
             let o = self.sim.reset_zeros();
             (
-                o.scans.into_pyarray(py),
-                o.rewards.into_pyarray(py),
-                o.terminated.into_pyarray(py),
-                o.truncated.into_pyarray(py),
-                o.state.into_pyarray(py),
+                o.scans.to_pyarray(py),
+                o.rewards.to_pyarray(py),
+                o.terminated.to_pyarray(py),
+                o.truncated.to_pyarray(py),
+                o.state.to_pyarray(py),
             )
         }
 
@@ -72,11 +72,11 @@ mod rustoracer {
                 .collect();
             let o = self.sim.step(&rescaled);
             (
-                o.scans.into_pyarray(py),
-                o.rewards.into_pyarray(py),
-                o.terminated.into_pyarray(py),
-                o.truncated.into_pyarray(py),
-                o.state.into_pyarray(py),
+                o.scans.to_pyarray(py),
+                o.rewards.to_pyarray(py),
+                o.terminated.to_pyarray(py),
+                o.truncated.to_pyarray(py),
+                o.state.to_pyarray(py),
             )
         }
 
@@ -125,11 +125,11 @@ mod rustoracer {
         ) {
             let o = self.sim.observe();
             (
-                o.scans.into_pyarray(py),
-                o.rewards.into_pyarray(py),
-                o.terminated.into_pyarray(py),
-                o.truncated.into_pyarray(py),
-                o.state.into_pyarray(py),
+                o.scans.to_pyarray(py),
+                o.rewards.to_pyarray(py),
+                o.terminated.to_pyarray(py),
+                o.truncated.to_pyarray(py),
+                o.state.to_pyarray(py),
             )
         }
     }

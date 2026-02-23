@@ -60,6 +60,7 @@ impl OccGrid {
         map.ordered_skeleton = map.ordered_skeleton();
         map
     }
+
     pub fn ordered_skeleton(&self) -> Vec<[f64; 2]> {
         let mut pts: Vec<[f64; 2]> = self
             .skeleton
@@ -101,18 +102,21 @@ impl OccGrid {
         }
         ordered
     }
+
     #[inline]
     pub fn pixels_to_position(&self, px: u32, py: u32) -> (f64, f64) {
         let x = px as f64 * self.res + self.ox;
         let y = (self.img.height() - 1 - py) as f64 * self.res + self.oy;
         (x, y)
     }
+
     #[inline]
     pub fn position_to_pixels(&self, x: f64, y: f64) -> (u32, u32) {
         let px = ((x - self.ox) * self.inv_res) as u32;
         let py = self.img.height() - 1 - ((y - self.oy) * self.inv_res) as u32;
         (px, py)
     }
+
     #[inline]
     pub fn edt(&self, px: u32, py: u32) -> f64 {
         if (0..self.img.width()).contains(&px) && (0..self.img.height()).contains(&py) {
@@ -125,9 +129,9 @@ impl OccGrid {
             0.0
         }
     }
+
     #[inline]
-    pub fn raycast(&self, x: f64, y: f64, ang: f64, max: f64) -> f64 {
-        let (dy, dx) = ang.sin_cos();
+    pub fn raycast(&self, x: f64, y: f64, dx: f64, dy: f64, max: f64) -> f64 {
         let mut t = 0.0;
         while t < max {
             let (px, py) = self.position_to_pixels(x + t * dx, y + t * dy);
@@ -139,6 +143,7 @@ impl OccGrid {
         }
         max
     }
+
     pub fn car_pixels(&self, car: &Car) -> Vec<(u32, u32)> {
         let (sa, ca) = car.theta.sin_cos();
         let (hl, hw) = (LENGTH / 2.0 * self.inv_res, WIDTH / 2.0 * self.inv_res);
