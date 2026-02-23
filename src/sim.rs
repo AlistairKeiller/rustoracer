@@ -107,7 +107,7 @@ impl Sim {
         self.observe()
     }
 
-    pub fn reset(&mut self, poses: &[[f64; 3]]) -> Obs {
+    pub fn reset(&mut self, poses: &[[f64; 3]]) -> Obs<'_> {
         self.steps.fill(0);
         for (c, p) in self.cars.iter_mut().zip(poses) {
             *c = Car {
@@ -150,55 +150,108 @@ impl Sim {
         self.observe()
     }
 
-    pub fn observe(&mut self) -> Obs {
+    pub fn observe(&mut self) -> Obs<'_> {
         let n = self.cars.len();
         let n_wps = self.map.ordered_skeleton.len();
         let n_beams = self.n_beams;
+        let max_range = self.max_range;
 
-        for i in 0..n {
-            self.buf_terminated[i] = self.map.car_collides(&self.cars[i]);
-            self.buf_truncated[i] = self.steps[i] >= self.max_steps;
-
-            let prev_idx = self.waypoint_idx[i];
-            let nearest = self.nearest_waypoint(self.cars[i].x, self.cars[i].y);
-            self.waypoint_idx[i] = nearest;
-            let mut delta = nearest as f64 - prev_idx as f64;
-            if delta > n_wps as f64 / 2.0 {
-                delta -= n_wps as f64;
-            } else if delta < -(n_wps as f64 / 2.0) {
-                delta += n_wps as f64;
-            }
-            self.buf_rewards[i] =
-                delta / n_wps as f64 * 100.0 - if self.buf_terminated[i] { 100.0 } else { 0.0 };
-
-            if self.buf_terminated[i] || self.buf_truncated[i] {
+        let random_resets: Vec<[f64; 3]> = (0..n)
+            .map(|_| {
                 let rand_idx = self.rng.random_range(0..n_wps);
                 let wp = self.map.ordered_skeleton[rand_idx];
                 let next_wp = self.map.ordered_skeleton[(rand_idx + 1) % n_wps];
                 let theta = (next_wp[1] - wp[1]).atan2(next_wp[0] - wp[0]);
-                self.reset_single(&[wp[0], wp[1], theta], i);
-            }
+                [wp[0], wp[1], theta]
+            })
+            .collect();
 
-            let c = &self.cars[i];
-            let base = i * (n_beams + 2);
-            let (sin_h, cos_h) = c.theta.sin_cos();
-            for (j, &(sin_a, cos_a)) in self.beam_sin_cos.iter().enumerate() {
-                let dx = cos_h * cos_a - sin_h * sin_a;
-                let dy = sin_h * cos_a + cos_h * sin_a;
-                self.buf_scans[base + j] = self.map.raycast(c.x, c.y, dx, dy, self.max_range);
-            }
-            self.buf_scans[base + n_beams] = c.velocity;
-            self.buf_scans[base + n_beams + 1] = c.steering;
+        let map = &self.map;
+        let beam_sin_cos = &self.beam_sin_cos;
 
-            let base = i * 7;
-            self.buf_state[base] = c.x;
-            self.buf_state[base + 1] = c.y;
-            self.buf_state[base + 2] = c.theta;
-            self.buf_state[base + 3] = c.velocity;
-            self.buf_state[base + 4] = c.steering;
-            self.buf_state[base + 5] = c.yaw_rate;
-            self.buf_state[base + 6] = c.slip_angle;
-        }
+        self.buf_terminated
+            .par_iter_mut()
+            .zip(self.buf_truncated.par_iter_mut())
+            .zip(self.buf_rewards.par_iter_mut())
+            .zip(self.cars.par_iter_mut())
+            .zip(self.waypoint_idx.par_iter_mut())
+            .zip(self.steps.par_iter())
+            .zip(self.buf_scans.par_chunks_mut(n_beams + 2))
+            .zip(self.buf_state.par_chunks_mut(7))
+            .zip(random_resets.par_iter())
+            .for_each(
+                |(
+                    (((((((terminated, truncated), reward), car), wp_idx), step), scan), state),
+                    reset,
+                )| {
+                    *terminated = map.car_collides(car);
+                    *truncated = *step >= self.max_steps;
+
+                    let prev_idx = *wp_idx;
+                    let nearest = {
+                        let (cx, cy) = (car.x, car.y);
+                        (0..n_wps)
+                            .min_by(|&a, &b| {
+                                let wa = map.ordered_skeleton[a];
+                                let wb = map.ordered_skeleton[b];
+                                let da = (wa[0] - cx).powi(2) + (wa[1] - cy).powi(2);
+                                let db = (wb[0] - cx).powi(2) + (wb[1] - cy).powi(2);
+                                da.total_cmp(&db)
+                            })
+                            .unwrap_or(0)
+                    };
+                    *wp_idx = nearest;
+
+                    let mut delta = nearest as f64 - prev_idx as f64;
+                    if delta > n_wps as f64 / 2.0 {
+                        delta -= n_wps as f64;
+                    } else if delta < -(n_wps as f64 / 2.0) {
+                        delta += n_wps as f64;
+                    }
+                    *reward = delta / n_wps as f64 * 100.0 - if *terminated { 100.0 } else { 0.0 };
+
+                    if *terminated || *truncated {
+                        *car = Car {
+                            x: reset[0],
+                            y: reset[1],
+                            theta: reset[2],
+                            velocity: 0.0,
+                            steering: 0.0,
+                            yaw_rate: 0.0,
+                            slip_angle: 0.0,
+                        };
+                        *wp_idx = {
+                            let (cx, cy) = (car.x, car.y);
+                            (0..n_wps)
+                                .min_by(|&a, &b| {
+                                    let wa = map.ordered_skeleton[a];
+                                    let wb = map.ordered_skeleton[b];
+                                    let da = (wa[0] - cx).powi(2) + (wa[1] - cy).powi(2);
+                                    let db = (wb[0] - cx).powi(2) + (wb[1] - cy).powi(2);
+                                    da.total_cmp(&db)
+                                })
+                                .unwrap_or(0)
+                        };
+                    }
+
+                    let (sin_h, cos_h) = car.theta.sin_cos();
+                    for (j, &(sin_a, cos_a)) in beam_sin_cos.iter().enumerate() {
+                        let dx = cos_h * cos_a - sin_h * sin_a;
+                        let dy = sin_h * cos_a + cos_h * sin_a;
+                        scan[j] = map.raycast(car.x, car.y, dx, dy, max_range);
+                    }
+                    scan[n_beams] = car.velocity;
+                    scan[n_beams + 1] = car.steering;
+
+                    state[0] = car.x;
+                    state[1] = car.y;
+                    state[2] = car.theta;
+                    state[3] = car.velocity;
+                    state[4] = car.steering;
+                    state[5] = car.yaw_rate;
+                    state[6] = car.slip_angle;
+                },
+            );
 
         Obs {
             scans: &self.buf_scans,

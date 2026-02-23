@@ -26,3 +26,7 @@ rand_distr = "0.6.0"
 ros = ["dep:r2r", "dep:tokio", "dep:futures"]
 python = ["dep:pyo3", "dep:numpy"]
 show_images = ["dep:show-image"]
+
+[profile.profiling]
+inherits = "release"
+debug = true
