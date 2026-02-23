@@ -1,7 +1,7 @@
 # Install instructions
 ## RL
 ```bash
-uv run --with stable-baselines3 --with wandb --with tensorboard --with gymnasium[other] ppo.py
+uv run --with torch ppo.py
 ```
 
 ## Devcontainer
