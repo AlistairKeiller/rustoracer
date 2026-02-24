@@ -147,21 +147,22 @@ impl OccGrid {
         max
     }
 
-    pub fn car_pixels(&self, car: &Car) -> Vec<(u32, u32)> {
+    pub fn car_pixels<'a>(&'a self, car: &'a Car) -> impl Iterator<Item = (u32, u32)> + 'a {
         let (sa, ca) = car.theta.sin_cos();
         let (hl, hw) = (LENGTH / 2.0 * self.inv_res, WIDTH / 2.0 * self.inv_res);
         let (cx, cy) = self.position_to_pixels(car.x, car.y);
         let r = hl.hypot(hw).ceil() as i32;
-        let mut out = Vec::new();
-        for dy in -r..=r {
-            for dx in -r..=r {
+
+        (-r..=r).flat_map(move |dy| {
+            (-r..=r).filter_map(move |dx| {
                 let (fx, fy) = (dx as f64, dy as f64);
                 if (fx * ca - fy * sa).abs() <= hl && (fx * sa + fy * ca).abs() <= hw {
-                    out.push(((cx as i32 + dx) as u32, (cy as i32 + dy) as u32));
+                    Some(((cx as i32 + dx) as u32, (cy as i32 + dy) as u32))
+                } else {
+                    None
                 }
-            }
-        }
-        out
+            })
+        })
     }
 
     pub fn car_collides(&self, car: &Car) -> bool {
