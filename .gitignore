@@ -24,3 +24,5 @@ log
 wandb
 videos
 runs
+
+checkpoints
