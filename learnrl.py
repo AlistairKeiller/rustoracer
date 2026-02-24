@@ -5,7 +5,6 @@ import os
 os.environ["TORCHDYNAMO_INLINE_INBUILT_NN_MODULES"] = "1"
 
 import math
-import os
 import random
 import time
 from collections import deque
@@ -50,7 +49,7 @@ class Args:
     """the learning rate of the optimizer"""
     num_envs: int = 1024
     """the number of parallel game environments"""
-    num_steps: int = 2048
+    num_steps: int = 128
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
@@ -85,13 +84,18 @@ class Args:
     num_iterations: int = 0
     """the number of iterations (computed in runtime)"""
 
-    measure_burnin: int = 3
+    measure_burnin: int = 1
     """Number of burn-in iterations for speed measure."""
 
     compile: bool = False
     """whether to use torch.compile."""
     cudagraphs: bool = False
     """whether to use cudagraphs on top of compile."""
+
+    video_interval: int = 5
+    """record an evaluation video every N iterations (0 to disable)"""
+    video_max_steps: int = 1000
+    """max steps per evaluation video episode"""
 
 
 class RunningMeanStd:
@@ -162,7 +166,6 @@ class Agent(nn.Module):
 
 
 def gae(next_obs, next_done, container):
-    # bootstrap value if not done
     next_value = get_value(next_obs).reshape(-1)
     lastgaelam = 0
     nextnonterminals = (~container["dones"]).float().unbind(0)
@@ -192,10 +195,8 @@ def gae(next_obs, next_done, container):
 def rollout(obs, done, avg_returns=[]):
     ts = []
     for step in range(args.num_steps):
-        # ALGO LOGIC: action logic
         action, logprob, _, value = policy(obs=obs)
 
-        # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, reward, next_done, infos = step_func(action)
 
         if "final_info" in infos:
@@ -237,12 +238,10 @@ def update(obs, actions, logprobs, advantages, returns, vals):
     if args.norm_adv:
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-    # Policy loss
     pg_loss1 = -advantages * ratio
     pg_loss2 = -advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
     pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
-    # Value loss
     newvalue = newvalue.view(-1)
     if args.clip_vloss:
         v_loss_unclipped = (newvalue - returns) ** 2
@@ -289,6 +288,62 @@ update = tensordict.nn.TensorDictModule(
     ],
 )
 
+
+# ─────────────────────────────────────────────────────────────
+# Video recording helper
+# ─────────────────────────────────────────────────────────────
+@torch.no_grad()
+def record_eval_video(
+    yaml: str,
+    agent_inference: Agent,
+    obs_rms: RunningMeanStd,
+    device: torch.device,
+    max_steps: int = 1000,
+) -> Tuple[wandb.Video | None, float]:
+    """Run one deterministic episode in a single-env copy, return (wandb.Video, total_reward)."""
+    eval_env = RustoracerEnv(yaml=yaml, num_envs=1, max_steps=max_steps)
+    raw_obs, _ = eval_env.reset(seed=42)
+
+    frames = []
+    total_reward = 0.0
+
+    for _ in range(max_steps):
+        # render BEFORE taking the step so frame 0 is the initial state
+        frame = eval_env.render()  # (H, W, 3) uint8
+        if frame is not None:
+            frames.append(frame)
+
+        obs_norm = np.clip(obs_rms.normalize(raw_obs), -10, 10)
+        obs_t = torch.tensor(obs_norm, device=device, dtype=torch.float)
+
+        # deterministic: use mean action
+        action_mean = agent_inference.actor_mean(obs_t)
+        action_np = action_mean.cpu().numpy().astype(np.float64).clip(-1.0, 1.0)
+
+        raw_obs, reward, terminated, truncated, _ = eval_env.step(action_np)
+        total_reward += float(reward[0])
+
+        if terminated[0] or truncated[0]:
+            # capture the final frame
+            frame = eval_env.render()
+            if frame is not None:
+                frames.append(frame)
+            break
+
+    eval_env.close()
+
+    if len(frames) == 0:
+        return None, total_reward
+
+    # wandb.Video expects (T, C, H, W) uint8
+    video_np = np.stack(frames, axis=0)  # (T, H, W, 3)
+    video_np = video_np.transpose(0, 3, 1, 2)  # (T, C, H, W)
+    return wandb.Video(video_np, fps=30, format="mp4"), total_reward
+
+
+# ─────────────────────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     args = tyro.cli(Args)
 
@@ -299,6 +354,10 @@ if __name__ == "__main__":
     run_name = (
         f"Rustoracer__{args.exp_name}__{args.seed}__{args.compile}__{args.cudagraphs}"
     )
+
+    print(f"batch_size        = {args.batch_size:,}")
+    print(f"num_iterations    = {args.num_iterations}")
+    print(f"video_interval    = {args.video_interval}")
 
     wandb.init(
         project="ppo_continuous_action",
@@ -326,22 +385,20 @@ if __name__ == "__main__":
         "only continuous action space is supported"
     )
 
-    # Observation / reward normalisation (replaces gym wrappers)
     obs_rms = RunningMeanStd(shape=(n_obs,))
     ret_rms = RunningMeanStd(shape=())
-    disc_returns = np.zeros(args.num_envs, dtype=np.float64)  # for reward normalisation
-    ep_returns = np.zeros(args.num_envs, dtype=np.float64)  # episode return tracker
+    disc_returns = np.zeros(args.num_envs, dtype=np.float64)
+    ep_returns = np.zeros(args.num_envs, dtype=np.float64)
 
     def step_func(
         action: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, dict]:
-        # Clip to valid range (Rust rescales [-1,1] → [steer_min..steer_max, 1..v_max])
         act_np = action.cpu().numpy().astype(np.float64).clip(-1.0, 1.0)
 
         next_obs_np, reward_np, terminated, truncated, info = envs.step(act_np)
         next_done = np.logical_or(terminated, truncated)
 
-        # ---- episode-return tracking (replaces RecordEpisodeStatistics) ----
+        # episode-return tracking
         ep_returns[:] += reward_np
         final_infos: list = []
         has_final = False
@@ -356,11 +413,11 @@ if __name__ == "__main__":
         if has_final:
             infos["final_info"] = final_infos
 
-        # ---- normalise observations (replaces NormalizeObservation) ----
+        # normalise observations
         obs_rms.update(next_obs_np)
         next_obs_norm = np.clip(obs_rms.normalize(next_obs_np), -10, 10)
 
-        # ---- normalise rewards (replaces NormalizeReward) ----
+        # normalise rewards
         disc_returns[:] = reward_np + args.gamma * disc_returns * (~next_done)
         ret_rms.update(disc_returns)
         reward_norm = np.clip(reward_np / np.sqrt(ret_rms.var + 1e-8), -10, 10)
@@ -404,6 +461,7 @@ if __name__ == "__main__":
     global_step = 0
     container_local = None
 
+    # initial reset
     raw_obs, _ = envs.reset(seed=args.seed)
     obs_rms.update(raw_obs)
     next_obs = torch.tensor(
@@ -413,9 +471,19 @@ if __name__ == "__main__":
     )
     next_done = torch.zeros(args.num_envs, device=device, dtype=torch.bool)
 
+    # ── Determine which iterations to record video ──
+    if args.capture_video and args.video_interval > 0:
+        video_iters = set(range(1, args.num_iterations + 1, args.video_interval))
+        video_iters.add(args.num_iterations)  # always record the last one
+    else:
+        video_iters = set()
+
     pbar = tqdm.tqdm(range(1, args.num_iterations + 1))
     global_step_burnin = None
+    start_time = time.time()  # start timing from the very beginning
+
     for iteration in pbar:
+        # start speed measurement after burn-in
         if iteration == args.measure_burnin:
             global_step_burnin = global_step
             start_time = time.time()
@@ -441,7 +509,6 @@ if __name__ == "__main__":
             )
             for b in b_inds:
                 container_local = container_flat[b]
-
                 out = update(container_local, tensordict_out=tensordict.TensorDict())
                 if args.target_kl is not None and out["approx_kl"] > args.target_kl:
                     break
@@ -449,44 +516,69 @@ if __name__ == "__main__":
                 continue
             break
 
-        if global_step_burnin is not None and iteration % 10 == 0:
-            speed = (global_step - global_step_burnin) / (time.time() - start_time)
-            r = container["rewards"].mean()
-            r_max = container["rewards"].max()
-            avg_returns_t = (
-                torch.tensor(avg_returns).mean()
-                if len(avg_returns)
-                else torch.tensor(0.0)
-            )
+        # ── Log EVERY iteration ──
+        speed = (
+            (global_step - global_step_burnin) / (time.time() - start_time)
+            if global_step_burnin is not None
+            else 0.0
+        )
+        r = container["rewards"].mean()
+        r_max = container["rewards"].max()
+        avg_returns_t = (
+            torch.tensor(avg_returns).mean() if len(avg_returns) else torch.tensor(0.0)
+        )
 
-            with torch.no_grad():
-                logs = {
-                    "episode_return": avg_returns_t.item(),
-                    "logprobs": container["logprobs"].mean(),
-                    "advantages": container["advantages"].mean(),
-                    "returns": container["returns"].mean(),
-                    "vals": container["vals"].mean(),
-                    "gn": out["gn"].mean(),
-                }
+        with torch.no_grad():
+            log_dict = {
+                "charts/episode_return": avg_returns_t.item(),
+                "charts/reward_mean": r.item(),
+                "charts/reward_max": r_max.item(),
+                "charts/learning_rate": float(optimizer.param_groups[0]["lr"]),
+                "losses/pg_loss": out["pg_loss"].item(),
+                "losses/v_loss": out["v_loss"].item(),
+                "losses/entropy": out["entropy_loss"].item(),
+                "losses/approx_kl": out["approx_kl"].item(),
+                "losses/old_approx_kl": out["old_approx_kl"].item(),
+                "losses/clipfrac": out["clipfrac"].item(),
+                "losses/grad_norm": out["gn"].item(),
+                "rollout/logprobs_mean": container["logprobs"].mean().item(),
+                "rollout/advantages_mean": container["advantages"].mean().item(),
+                "rollout/returns_mean": container["returns"].mean().item(),
+                "rollout/vals_mean": container["vals"].mean().item(),
+                "perf/speed_sps": speed,
+                "perf/iteration": iteration,
+                "perf/global_step": global_step,
+            }
 
-            lr = optimizer.param_groups[0]["lr"]
-            pbar.set_description(
-                f"speed: {speed: 4.1f} sps, "
-                f"reward avg: {r:4.2f}, "
-                f"reward max: {r_max:4.2f}, "
-                f"returns: {avg_returns_t: 4.2f},"
-                f"lr: {lr: 4.2f}"
+        # ── Record eval video ──
+        if iteration in video_iters:
+            vid, eval_reward = record_eval_video(
+                yaml=args.yaml,
+                agent_inference=agent_inference,
+                obs_rms=obs_rms,
+                device=device,
+                max_steps=args.video_max_steps,
             )
-            wandb.log(
-                {
-                    "speed": speed,
-                    "episode_return": avg_returns_t,
-                    "r": r,
-                    "r_max": r_max,
-                    "lr": lr,
-                    **logs,
-                },
-                step=global_step,
-            )
+            if vid is not None:
+                log_dict["video/eval"] = vid
+            log_dict["charts/eval_return"] = eval_reward
+
+        wandb.log(log_dict, step=global_step)
+
+        lr = optimizer.param_groups[0]["lr"]
+        pbar.set_description(
+            f"it {iteration}/{args.num_iterations} | "
+            f"sps: {speed:,.0f} | "
+            f"r_avg: {r:.2f} | "
+            f"r_max: {r_max:.2f} | "
+            f"ep_ret: {avg_returns_t:.2f} | "
+            f"lr: {lr:.2e}"
+        )
+
+    # ── Final summary ──
+    total_time = time.time() - start_time
+    print(f"\nTraining complete: {global_step:,} steps in {total_time:.1f}s")
+    print(f"Average speed: {global_step / total_time:,.0f} SPS")
 
     envs.close()
+    wandb.finish()
