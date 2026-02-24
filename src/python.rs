@@ -7,7 +7,7 @@ use crate::Sim;
 mod rustoracer {
     use numpy::PyReadonlyArray1;
 
-    use crate::car::{STEER_MAX, STEER_MIN, V_MAX, V_MIN};
+    use crate::car::{STEER_MAX, STEER_MIN, V_MAX};
 
     use super::*;
 

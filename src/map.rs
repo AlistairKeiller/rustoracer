@@ -2,7 +2,7 @@ use crate::car::{Car, LENGTH, WIDTH};
 use crate::skeleton::thin_image_edges;
 use image::GrayImage;
 use imageproc::distance_transform::euclidean_squared_distance_transform;
-use rand::{Rng, RngExt};
+use kiddo::immutable::float::kdtree::ImmutableKdTree;
 use serde::Deserialize;
 #[cfg(feature = "show_images")]
 use show_image::{ImageInfo, ImageView, create_window};
@@ -20,6 +20,7 @@ pub struct OccGrid {
     pub edt: Vec<f64>,
     pub skeleton: GrayImage,
     pub ordered_skeleton: Vec<[f64; 2]>,
+    pub skeleton_tree: ImmutableKdTree<f64, usize, 2, 32>,
     pub res: f64,
     pub ox: f64,
     pub oy: f64,
@@ -53,11 +54,13 @@ impl OccGrid {
             edt: edt.pixels().map(|p| p.0[0].sqrt() * m.resolution).collect(),
             skeleton,
             ordered_skeleton: Vec::new(),
+            skeleton_tree: ImmutableKdTree::new_from_slice(&[]),
             res: m.resolution,
             ox: m.origin[0],
             oy: m.origin[1],
         };
         map.ordered_skeleton = map.ordered_skeleton();
+        map.skeleton_tree = ImmutableKdTree::new_from_slice(&map.ordered_skeleton);
         map
     }
 

@@ -1,3 +1,4 @@
+use kiddo::SquaredEuclidean;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use rayon::prelude::*;
@@ -188,18 +189,11 @@ impl Sim {
                     *truncated = *step >= self.max_steps;
 
                     let prev_idx = *wp_idx;
-                    let nearest = {
-                        let (cx, cy) = (car.x, car.y);
-                        (0..n_wps)
-                            .min_by(|&a, &b| {
-                                let wa = map.ordered_skeleton[a];
-                                let wb = map.ordered_skeleton[b];
-                                let da = (wa[0] - cx).powi(2) + (wa[1] - cy).powi(2);
-                                let db = (wb[0] - cx).powi(2) + (wb[1] - cy).powi(2);
-                                da.total_cmp(&db)
-                            })
-                            .unwrap_or(0)
-                    };
+                    let nearest = self
+                        .map
+                        .skeleton_tree
+                        .nearest_one::<SquaredEuclidean>(&[car.x, car.y])
+                        .item;
                     *wp_idx = nearest;
 
                     let mut delta = nearest as f64 - prev_idx as f64;
