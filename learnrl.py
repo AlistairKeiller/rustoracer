@@ -290,7 +290,7 @@ update = tensordict.nn.TensorDictModule(
 
 
 # ─────────────────────────────────────────────────────────────
-# Video recording helper
+# Video recording helper  (FIX: render_mode="rgb_array")
 # ─────────────────────────────────────────────────────────────
 @torch.no_grad()
 def record_eval_video(
@@ -301,10 +301,15 @@ def record_eval_video(
     max_steps: int = 1000,
 ) -> Tuple[wandb.Video | None, float]:
     """Run one deterministic episode in a single-env copy, return (wandb.Video, total_reward)."""
-    eval_env = RustoracerEnv(yaml=yaml, num_envs=1, max_steps=max_steps)
+    eval_env = RustoracerEnv(
+        yaml=yaml,
+        num_envs=1,
+        max_steps=max_steps,
+        render_mode="rgb_array",
+    )
     raw_obs, _ = eval_env.reset(seed=42)
 
-    frames = []
+    frames: list[np.ndarray] = []
     total_reward = 0.0
 
     for _ in range(max_steps):
@@ -324,7 +329,6 @@ def record_eval_video(
         total_reward += float(reward[0])
 
         if terminated[0] or truncated[0]:
-            # capture the final frame
             frame = eval_env.render()
             if frame is not None:
                 frames.append(frame)
@@ -338,7 +342,8 @@ def record_eval_video(
     # wandb.Video expects (T, C, H, W) uint8
     video_np = np.stack(frames, axis=0)  # (T, H, W, 3)
     video_np = video_np.transpose(0, 3, 1, 2)  # (T, C, H, W)
-    return wandb.Video(video_np, fps=30, format="mp4"), total_reward
+    video = wandb.Video(video_np, fps=30, format="mp4")
+    return video, total_reward
 
 
 # ─────────────────────────────────────────────────────────────
@@ -366,7 +371,6 @@ if __name__ == "__main__":
         save_code=True,
     )
 
-    # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -398,7 +402,6 @@ if __name__ == "__main__":
         next_obs_np, reward_np, terminated, truncated, info = envs.step(act_np)
         next_done = np.logical_or(terminated, truncated)
 
-        # episode-return tracking
         ep_returns[:] += reward_np
         final_infos: list = []
         has_final = False
@@ -413,11 +416,9 @@ if __name__ == "__main__":
         if has_final:
             infos["final_info"] = final_infos
 
-        # normalise observations
         obs_rms.update(next_obs_np)
         next_obs_norm = np.clip(obs_rms.normalize(next_obs_np), -10, 10)
 
-        # normalise rewards
         disc_returns[:] = reward_np + args.gamma * disc_returns * (~next_done)
         ret_rms.update(disc_returns)
         reward_norm = np.clip(reward_np / np.sqrt(ret_rms.var + 1e-8), -10, 10)
@@ -461,7 +462,6 @@ if __name__ == "__main__":
     global_step = 0
     container_local = None
 
-    # initial reset
     raw_obs, _ = envs.reset(seed=args.seed)
     obs_rms.update(raw_obs)
     next_obs = torch.tensor(
@@ -477,13 +477,13 @@ if __name__ == "__main__":
         video_iters.add(args.num_iterations)  # always record the last one
     else:
         video_iters = set()
+    print(f"Will record video at iterations: {sorted(video_iters)}")
 
     pbar = tqdm.tqdm(range(1, args.num_iterations + 1))
     global_step_burnin = None
-    start_time = time.time()  # start timing from the very beginning
+    start_time = time.time()
 
     for iteration in pbar:
-        # start speed measurement after burn-in
         if iteration == args.measure_burnin:
             global_step_burnin = global_step
             start_time = time.time()
@@ -502,7 +502,6 @@ if __name__ == "__main__":
         container = gae(next_obs, next_done, container)
         container_flat = container.view(-1)
 
-        clipfracs = []
         for epoch in range(args.update_epochs):
             b_inds = torch.randperm(container_flat.shape[0], device=device).split(
                 args.minibatch_size
@@ -552,6 +551,7 @@ if __name__ == "__main__":
 
         # ── Record eval video ──
         if iteration in video_iters:
+            print(f"\n[iter {iteration}] Recording evaluation video...")
             vid, eval_reward = record_eval_video(
                 yaml=args.yaml,
                 agent_inference=agent_inference,
@@ -560,7 +560,12 @@ if __name__ == "__main__":
                 max_steps=args.video_max_steps,
             )
             if vid is not None:
-                log_dict["video/eval"] = vid
+                log_dict["media/eval_video"] = vid
+                print(
+                    f"[iter {iteration}] Video captured, eval_return={eval_reward:.2f}"
+                )
+            else:
+                print(f"[iter {iteration}] WARNING: no frames captured!")
             log_dict["charts/eval_return"] = eval_reward
 
         wandb.log(log_dict, step=global_step)
@@ -575,7 +580,6 @@ if __name__ == "__main__":
             f"lr: {lr:.2e}"
         )
 
-    # ── Final summary ──
     total_time = time.time() - start_time
     print(f"\nTraining complete: {global_step:,} steps in {total_time:.1f}s")
     print(f"Average speed: {global_step / total_time:,.0f} SPS")
