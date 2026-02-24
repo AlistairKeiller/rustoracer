@@ -477,7 +477,6 @@ if __name__ == "__main__":
         video_iters.add(args.num_iterations)  # always record the last one
     else:
         video_iters = set()
-    print(f"Will record video at iterations: {sorted(video_iters)}")
 
     pbar = tqdm.tqdm(range(1, args.num_iterations + 1))
     global_step_burnin = None
