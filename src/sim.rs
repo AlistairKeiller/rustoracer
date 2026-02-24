@@ -1,4 +1,3 @@
-use kiddo::SquaredEuclidean;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use rayon::prelude::*;
@@ -92,11 +91,7 @@ impl Sim {
                 slip_angle: 0.0,
             };
         }
-        let nearest = self
-            .map
-            .skeleton_tree
-            .nearest_one::<SquaredEuclidean>(&[0.0, 0.0])
-            .item;
+        let nearest = self.map.skeleton_idx(0.0, 0.0);
         self.waypoint_idx.fill(nearest);
         self.observe()
     }
@@ -115,11 +110,7 @@ impl Sim {
             };
         }
         for i in 0..self.cars.len() {
-            self.waypoint_idx[i] = self
-                .map
-                .skeleton_tree
-                .nearest_one::<SquaredEuclidean>(&[self.cars[i].x, self.cars[i].y])
-                .item;
+            self.waypoint_idx[i] = self.map.skeleton_idx(self.cars[i].x, self.cars[i].y);
         }
         self.observe()
     }
@@ -135,11 +126,7 @@ impl Sim {
             yaw_rate: 0.0,
             slip_angle: 0.0,
         };
-        self.waypoint_idx[i] = self
-            .map
-            .skeleton_tree
-            .nearest_one::<SquaredEuclidean>(&[pose[0], pose[1]])
-            .item;
+        self.waypoint_idx[i] = self.map.skeleton_idx(self.cars[i].x, self.cars[i].y);
     }
 
     fn tick(&mut self, actions: Option<&[f64]>) -> Obs<'_> {
@@ -185,10 +172,7 @@ impl Sim {
                     *truncated = *step >= max_steps;
 
                     let prev_idx = *wp_idx;
-                    *wp_idx = map
-                        .skeleton_tree
-                        .nearest_one::<SquaredEuclidean>(&[car.x, car.y])
-                        .item;
+                    *wp_idx = map.skeleton_idx(car.x, car.y);
 
                     let mut delta = *wp_idx as f64 - prev_idx as f64;
                     if delta > n_wps as f64 / 2.0 {

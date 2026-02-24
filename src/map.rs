@@ -2,6 +2,7 @@ use crate::car::{Car, LENGTH, WIDTH};
 use crate::skeleton::thin_image_edges;
 use image::GrayImage;
 use imageproc::distance_transform::euclidean_squared_distance_transform;
+use kiddo::SquaredEuclidean;
 use kiddo::immutable::float::kdtree::ImmutableKdTree;
 use serde::Deserialize;
 #[cfg(feature = "show_images")]
@@ -21,6 +22,7 @@ pub struct OccGrid {
     pub skeleton: GrayImage,
     pub ordered_skeleton: Vec<[f64; 2]>,
     pub skeleton_tree: ImmutableKdTree<f64, usize, 2, 32>,
+    pub skeleton_lut: Vec<usize>,
     pub res: f64,
     pub ox: f64,
     pub oy: f64,
@@ -55,12 +57,14 @@ impl OccGrid {
             skeleton,
             ordered_skeleton: Vec::new(),
             skeleton_tree: ImmutableKdTree::new_from_slice(&[]),
+            skeleton_lut: Vec::new(),
             res: m.resolution,
             ox: m.origin[0],
             oy: m.origin[1],
         };
         map.ordered_skeleton = map.ordered_skeleton();
         map.skeleton_tree = ImmutableKdTree::new_from_slice(&map.ordered_skeleton);
+        map.skeleton_lut = map.build_skeleton_lut();
         map
     }
 
@@ -104,6 +108,25 @@ impl OccGrid {
             ordered.push(pts.swap_remove(nearest));
         }
         ordered
+    }
+
+    fn build_skeleton_lut(&self) -> Vec<usize> {
+        let (w, h) = (self.img.width(), self.img.height());
+        (0..h)
+            .flat_map(|py| {
+                (0..w).map(move |px| {
+                    let (x, y) = self.pixels_to_position(px, py);
+                    self.skeleton_tree
+                        .nearest_one::<SquaredEuclidean>(&[x, y])
+                        .item
+                })
+            })
+            .collect()
+    }
+
+    pub fn skeleton_idx(&self, x: f64, y: f64) -> usize {
+        let (px, py) = self.position_to_pixels(x, y);
+        self.skeleton_lut[(py * self.img.width() + px) as usize]
     }
 
     #[inline]
