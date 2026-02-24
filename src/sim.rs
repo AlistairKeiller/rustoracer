@@ -32,6 +32,7 @@ pub struct Sim {
     buf_rewards: Vec<f64>,
     buf_scans: Vec<f64>,
     buf_state: Vec<f64>,
+    buf_resets: Vec<[f64; 3]>,
 }
 
 impl Sim {
@@ -70,24 +71,12 @@ impl Sim {
             buf_rewards: vec![0.0; n],
             buf_scans: vec![0.0; n * (n_beams + 2)],
             buf_state: vec![0.0; n * 7],
+            buf_resets: vec![[0.0; 3]; n],
         }
     }
 
     pub fn seed(&mut self, seed: u64) {
         self.rng = SmallRng::seed_from_u64(seed);
-    }
-
-    fn nearest_waypoint(&self, x: f64, y: f64) -> usize {
-        let n_wps = self.map.ordered_skeleton.len();
-        (0..n_wps)
-            .min_by(|&a, &b| {
-                let wa = self.map.ordered_skeleton[a];
-                let wb = self.map.ordered_skeleton[b];
-                let da = (wa[0] - x).powi(2) + (wa[1] - y).powi(2);
-                let db = (wb[0] - x).powi(2) + (wb[1] - y).powi(2);
-                da.total_cmp(&db)
-            })
-            .unwrap_or(0)
     }
 
     pub fn reset_zeros(&mut self) -> Obs {
@@ -103,7 +92,11 @@ impl Sim {
                 slip_angle: 0.0,
             };
         }
-        let nearest = self.nearest_waypoint(0.0, 0.0);
+        let nearest = self
+            .map
+            .skeleton_tree
+            .nearest_one::<SquaredEuclidean>(&[0.0, 0.0])
+            .item;
         self.waypoint_idx.fill(nearest);
         self.observe()
     }
@@ -122,7 +115,11 @@ impl Sim {
             };
         }
         for i in 0..self.cars.len() {
-            self.waypoint_idx[i] = self.nearest_waypoint(self.cars[i].x, self.cars[i].y);
+            self.waypoint_idx[i] = self
+                .map
+                .skeleton_tree
+                .nearest_one::<SquaredEuclidean>(&[self.cars[i].x, self.cars[i].y])
+                .item;
         }
         self.observe()
     }
@@ -138,34 +135,27 @@ impl Sim {
             yaw_rate: 0.0,
             slip_angle: 0.0,
         };
-        self.waypoint_idx[i] = self.nearest_waypoint(pose[0], pose[1]);
+        self.waypoint_idx[i] = self
+            .map
+            .skeleton_tree
+            .nearest_one::<SquaredEuclidean>(&[pose[0], pose[1]])
+            .item;
     }
 
-    pub fn step(&mut self, actions: &[f64]) -> Obs {
-        for (c, a) in self.cars.iter_mut().zip(actions.chunks(2)) {
-            c.step(a[0], a[1], self.dt);
-        }
-        for s in self.steps.iter_mut() {
-            *s += 1;
-        }
-        self.observe()
-    }
-
-    pub fn observe(&mut self) -> Obs<'_> {
+    fn tick(&mut self, actions: Option<&[f64]>) -> Obs<'_> {
         let n = self.cars.len();
         let n_wps = self.map.ordered_skeleton.len();
         let n_beams = self.n_beams;
         let max_range = self.max_range;
+        let max_steps = self.max_steps;
+        let dt = self.dt;
 
-        let random_resets: Vec<[f64; 3]> = (0..n)
-            .map(|_| {
-                let rand_idx = self.rng.random_range(0..n_wps);
-                let wp = self.map.ordered_skeleton[rand_idx];
-                let next_wp = self.map.ordered_skeleton[(rand_idx + 1) % n_wps];
-                let theta = (next_wp[1] - wp[1]).atan2(next_wp[0] - wp[0]);
-                [wp[0], wp[1], theta]
-            })
-            .collect();
+        for i in 0..n {
+            let ri = self.rng.random_range(0..n_wps);
+            let wp = self.map.ordered_skeleton[ri];
+            let nxt = self.map.ordered_skeleton[(ri + 1) % n_wps];
+            self.buf_resets[i] = [wp[0], wp[1], (nxt[1] - wp[1]).atan2(nxt[0] - wp[0])];
+        }
 
         let map = &self.map;
         let beam_sin_cos = &self.beam_sin_cos;
@@ -179,24 +169,31 @@ impl Sim {
             .zip(self.steps.par_iter_mut())
             .zip(self.buf_scans.par_chunks_mut(n_beams + 2))
             .zip(self.buf_state.par_chunks_mut(7))
-            .zip(random_resets.par_iter())
+            .zip(self.buf_resets.par_iter())
+            .enumerate()
             .for_each(
                 |(
-                    (((((((terminated, truncated), reward), car), wp_idx), step), scan), state),
-                    reset,
+                    i,
+                    (
+                        (((((((terminated, truncated), reward), car), wp_idx), step), scan), state),
+                        reset,
+                    ),
                 )| {
+                    if let Some(actions) = actions {
+                        *step += 1;
+                        car.step(actions[i * 2], actions[i * 2 + 1], dt);
+                    }
+
                     *terminated = map.car_collides(car);
-                    *truncated = *step >= self.max_steps;
+                    *truncated = *step >= max_steps;
 
                     let prev_idx = *wp_idx;
-                    let nearest = self
-                        .map
+                    *wp_idx = map
                         .skeleton_tree
                         .nearest_one::<SquaredEuclidean>(&[car.x, car.y])
                         .item;
-                    *wp_idx = nearest;
 
-                    let mut delta = nearest as f64 - prev_idx as f64;
+                    let mut delta = *wp_idx as f64 - prev_idx as f64;
                     if delta > n_wps as f64 / 2.0 {
                         delta -= n_wps as f64;
                     } else if delta < -(n_wps as f64 / 2.0) {
@@ -215,18 +212,10 @@ impl Sim {
                             yaw_rate: 0.0,
                             slip_angle: 0.0,
                         };
-                        *wp_idx = {
-                            let (cx, cy) = (car.x, car.y);
-                            (0..n_wps)
-                                .min_by(|&a, &b| {
-                                    let wa = map.ordered_skeleton[a];
-                                    let wb = map.ordered_skeleton[b];
-                                    let da = (wa[0] - cx).powi(2) + (wa[1] - cy).powi(2);
-                                    let db = (wb[0] - cx).powi(2) + (wb[1] - cy).powi(2);
-                                    da.total_cmp(&db)
-                                })
-                                .unwrap_or(0)
-                        };
+                        *wp_idx = map
+                            .skeleton_tree
+                            .nearest_one::<SquaredEuclidean>(&[car.x, car.y])
+                            .item;
                     }
 
                     let (sin_h, cos_h) = car.theta.sin_cos();
@@ -255,5 +244,13 @@ impl Sim {
             truncated: &self.buf_truncated,
             state: &self.buf_state,
         }
+    }
+
+    pub fn step(&mut self, actions: &[f64]) -> Obs<'_> {
+        self.tick(Some(actions))
+    }
+
+    pub fn observe(&mut self) -> Obs<'_> {
+        self.tick(None)
     }
 }
