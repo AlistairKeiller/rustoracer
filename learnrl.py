@@ -1,4 +1,5 @@
-# docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/ppo/#ppo_continuous_actionpy
+from __future__ import annotations
+
 import os
 
 os.environ["TORCHDYNAMO_INLINE_INBUILT_NN_MODULES"] = "1"
@@ -24,6 +25,8 @@ from tensordict import from_module
 from tensordict.nn import CudaGraphModule
 from torch.distributions.normal import Normal
 
+from rustoracerpy import RustoracerEnv
+
 
 @dataclass
 class Args:
@@ -35,17 +38,17 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
-    capture_video: bool = False
+    capture_video: bool = True
     """whether to capture videos of the agent performances (check out `videos` folder)"""
 
     # Algorithm specific arguments
-    env_id: str = "HalfCheetah-v4"
-    """the id of the environment"""
-    total_timesteps: int = 1000000
+    yaml: str = "maps/berlin.yaml"
+    """path to the RustoracerEnv YAML map file"""
+    total_timesteps: int = 50_000_000
     """total timesteps of the experiments"""
     learning_rate: float = 3e-4
     """the learning rate of the optimizer"""
-    num_envs: int = 1
+    num_envs: int = 1024
     """the number of parallel game environments"""
     num_steps: int = 2048
     """the number of steps to run in each environment per policy rollout"""
@@ -91,25 +94,28 @@ class Args:
     """whether to use cudagraphs on top of compile."""
 
 
-def make_env(env_id, idx, capture_video, run_name, gamma):
-    def thunk():
-        if capture_video and idx == 0:
-            env = gym.make(env_id, render_mode="rgb_array")
-            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        else:
-            env = gym.make(env_id)
-        env = gym.wrappers.FlattenObservation(
-            env
-        )  # deal with dm_control's Dict observation space
-        env = gym.wrappers.RecordEpisodeStatistics(env)
-        env = gym.wrappers.ClipAction(env)
-        env = gym.wrappers.NormalizeObservation(env)
-        env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-        env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-        env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-        return env
+class RunningMeanStd:
+    """Welford online estimator (same algorithm as gym.wrappers.NormalizeObservation)."""
 
-    return thunk
+    def __init__(self, shape=(), eps=1e-8):
+        self.mean = np.zeros(shape, dtype=np.float64)
+        self.var = np.ones(shape, dtype=np.float64)
+        self.count = eps
+
+    def update(self, x: np.ndarray):
+        batch_mean = np.mean(x, axis=0)
+        batch_var = np.var(x, axis=0)
+        batch_count = x.shape[0]
+        delta = batch_mean - self.mean
+        tot = self.count + batch_count
+        self.mean = self.mean + delta * batch_count / tot
+        m_a = self.var * self.count
+        m_b = batch_var * batch_count
+        self.var = (m_a + m_b + delta**2 * self.count * batch_count / tot) / tot
+        self.count = tot
+
+    def normalize(self, x: np.ndarray) -> np.ndarray:
+        return (x - self.mean) / np.sqrt(self.var + 1e-8)
 
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
@@ -194,15 +200,13 @@ def rollout(obs, done, avg_returns=[]):
 
         if "final_info" in infos:
             for info in infos["final_info"]:
-                r = float(info["episode"]["r"].reshape(()))
-                # max_ep_ret = max(max_ep_ret, r)
-                avg_returns.append(r)
-            # desc = f"global_step={global_step}, episodic_return={torch.tensor(avg_returns).mean(): 4.2f} (max={max_ep_ret: 4.2f})"
+                if info is not None:
+                    r = float(info["episode"]["r"])
+                    avg_returns.append(r)
 
         ts.append(
             tensordict.TensorDict._new_unsafe(
                 obs=obs,
-                # cleanrl ppo examples associate the done with the previous obs (not the done resulting from action)
                 dones=done,
                 vals=value.flatten(),
                 actions=action,
@@ -226,7 +230,6 @@ def update(obs, actions, logprobs, advantages, returns, vals):
     ratio = logratio.exp()
 
     with torch.no_grad():
-        # calculate approx_kl http://joschu.net/blog/kl-approx.html
         old_approx_kl = (-logratio).mean()
         approx_kl = ((ratio - 1) - logratio).mean()
         clipfrac = ((ratio - 1.0).abs() > args.clip_coef).float().mean()
@@ -293,7 +296,9 @@ if __name__ == "__main__":
     args.minibatch_size = batch_size // args.num_minibatches
     args.batch_size = args.num_minibatches * args.minibatch_size
     args.num_iterations = args.total_timesteps // args.batch_size
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{args.compile}__{args.cudagraphs}"
+    run_name = (
+        f"Rustoracer__{args.exp_name}__{args.seed}__{args.compile}__{args.cudagraphs}"
+    )
 
     wandb.init(
         project="ppo_continuous_action",
@@ -311,11 +316,9 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     ####### Environment setup #######
-    envs = gym.vector.SyncVectorEnv(
-        [
-            make_env(args.env_id, i, args.capture_video, run_name, args.gamma)
-            for i in range(args.num_envs)
-        ]
+    envs = RustoracerEnv(
+        yaml=args.yaml,
+        num_envs=args.num_envs,
     )
     n_act = math.prod(envs.single_action_space.shape)
     n_obs = math.prod(envs.single_observation_space.shape)
@@ -323,25 +326,54 @@ if __name__ == "__main__":
         "only continuous action space is supported"
     )
 
-    # Register step as a special op not to graph break
-    # @torch.library.custom_op("mylib::step", mutates_args=())
+    # Observation / reward normalisation (replaces gym wrappers)
+    obs_rms = RunningMeanStd(shape=(n_obs,))
+    ret_rms = RunningMeanStd(shape=())
+    disc_returns = np.zeros(args.num_envs, dtype=np.float64)  # for reward normalisation
+    ep_returns = np.zeros(args.num_envs, dtype=np.float64)  # episode return tracker
+
     def step_func(
         action: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        next_obs_np, reward, terminations, truncations, info = envs.step(
-            action.cpu().numpy()
-        )
-        next_done = np.logical_or(terminations, truncations)
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, dict]:
+        # Clip to valid range (Rust rescales [-1,1] → [steer_min..steer_max, 1..v_max])
+        act_np = action.cpu().numpy().astype(np.float64).clip(-1.0, 1.0)
+
+        next_obs_np, reward_np, terminated, truncated, info = envs.step(act_np)
+        next_done = np.logical_or(terminated, truncated)
+
+        # ---- episode-return tracking (replaces RecordEpisodeStatistics) ----
+        ep_returns[:] += reward_np
+        final_infos: list = []
+        has_final = False
+        for i in range(args.num_envs):
+            if next_done[i]:
+                final_infos.append({"episode": {"r": ep_returns[i]}})
+                ep_returns[i] = 0.0
+                has_final = True
+            else:
+                final_infos.append(None)
+        infos: dict = {}
+        if has_final:
+            infos["final_info"] = final_infos
+
+        # ---- normalise observations (replaces NormalizeObservation) ----
+        obs_rms.update(next_obs_np)
+        next_obs_norm = np.clip(obs_rms.normalize(next_obs_np), -10, 10)
+
+        # ---- normalise rewards (replaces NormalizeReward) ----
+        disc_returns[:] = reward_np + args.gamma * disc_returns * (~next_done)
+        ret_rms.update(disc_returns)
+        reward_norm = np.clip(reward_np / np.sqrt(ret_rms.var + 1e-8), -10, 10)
+
         return (
-            torch.as_tensor(next_obs_np, dtype=torch.float),
-            torch.as_tensor(reward),
+            torch.as_tensor(next_obs_norm, dtype=torch.float),
+            torch.as_tensor(reward_norm, dtype=torch.float),
             torch.as_tensor(next_done),
-            info,
+            infos,
         )
 
     ####### Agent #######
     agent = Agent(n_obs, n_act, device=device)
-    # Make a version of agent with detached params
     agent_inference = Agent(n_obs, n_act, device=device)
     agent_inference_p = from_module(agent).data
     agent_inference_p.to_module(agent_inference)
@@ -355,11 +387,9 @@ if __name__ == "__main__":
     )
 
     ####### Executables #######
-    # Define networks: wrapping the policy in a TensorDictModule allows us to use CudaGraphModule
     policy = agent_inference.get_action_and_value
     get_value = agent_inference.get_value
 
-    # Compile policy
     if args.compile:
         policy = torch.compile(policy)
         gae = torch.compile(gae, fullgraph=True)
@@ -373,18 +403,23 @@ if __name__ == "__main__":
     avg_returns = deque(maxlen=20)
     global_step = 0
     container_local = None
-    next_obs = torch.tensor(envs.reset()[0], device=device, dtype=torch.float)
+
+    raw_obs, _ = envs.reset(seed=args.seed)
+    obs_rms.update(raw_obs)
+    next_obs = torch.tensor(
+        np.clip(obs_rms.normalize(raw_obs), -10, 10),
+        device=device,
+        dtype=torch.float,
+    )
     next_done = torch.zeros(args.num_envs, device=device, dtype=torch.bool)
-    # max_ep_ret = -float("inf")
+
     pbar = tqdm.tqdm(range(1, args.num_iterations + 1))
-    # desc = ""
     global_step_burnin = None
     for iteration in pbar:
         if iteration == args.measure_burnin:
             global_step_burnin = global_step
             start_time = time.time()
 
-        # Annealing the rate if instructed to do so.
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
             lrnow = frac * args.learning_rate
@@ -399,7 +434,6 @@ if __name__ == "__main__":
         container = gae(next_obs, next_done, container)
         container_flat = container.view(-1)
 
-        # Optimizing the policy and value network
         clipfracs = []
         for epoch in range(args.update_epochs):
             b_inds = torch.randperm(container_flat.shape[0], device=device).split(
@@ -419,11 +453,15 @@ if __name__ == "__main__":
             speed = (global_step - global_step_burnin) / (time.time() - start_time)
             r = container["rewards"].mean()
             r_max = container["rewards"].max()
-            avg_returns_t = torch.tensor(avg_returns).mean()
+            avg_returns_t = (
+                torch.tensor(avg_returns).mean()
+                if len(avg_returns)
+                else torch.tensor(0.0)
+            )
 
             with torch.no_grad():
                 logs = {
-                    "episode_return": np.array(avg_returns).mean(),
+                    "episode_return": avg_returns_t.item(),
                     "logprobs": container["logprobs"].mean(),
                     "advantages": container["advantages"].mean(),
                     "returns": container["returns"].mean(),
