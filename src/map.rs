@@ -135,14 +135,29 @@ impl OccGrid {
 
     #[inline]
     pub fn raycast(&self, x: f64, y: f64, dx: f64, dy: f64, max: f64) -> f64 {
+        let px0 = (x - self.ox) * self.inv_res;
+        let py0 = (self.img.height() - 1) as f64 - (y - self.oy) * self.inv_res;
+        let dpx = dx * self.inv_res;
+        let dpy = -dy * self.inv_res;
+
+        let w = self.img.width();
+        let h = self.img.height();
+
         let mut t = 0.0;
         while t < max {
-            let (px, py) = self.position_to_pixels(x + t * dx, y + t * dy);
-            let d = self.edt(px, py);
+            let pxi = (px0 + t * dpx) as u32;
+            let pyi = (py0 + t * dpy) as u32;
+
+            let d = if pxi < w && pyi < h {
+                unsafe { *self.edt.get_unchecked((pxi + pyi * w) as usize) }
+            } else {
+                return t;
+            };
+
             if d < self.res {
                 return t;
             }
-            t += d;
+            t += d.max(self.res);
         }
         max
     }
@@ -168,6 +183,13 @@ impl OccGrid {
     pub fn car_collides(&self, car: &Car) -> bool {
         if !car.x.is_finite() || !car.y.is_finite() || !car.theta.is_finite() {
             return true;
+        }
+        let (px, py) = self.position_to_pixels(car.x, car.y);
+        let center_clearance = self.edt(px, py);
+        const CAR_CIRCUMRADIUS: f64 = 0.328824; // sqrt((LENGTH/2)^2 + (WIDTH/2)^2)
+
+        if center_clearance > CAR_CIRCUMRADIUS {
+            return false;
         }
         self.car_pixels(car)
             .into_iter()

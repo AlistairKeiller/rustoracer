@@ -32,7 +32,7 @@ pub struct Sim {
     buf_rewards: Vec<f64>,
     buf_scans: Vec<f64>,
     buf_state: Vec<f64>,
-    buf_resets: Vec<[f64; 3]>,
+    buf_resets: Vec<usize>,
 }
 
 impl Sim {
@@ -71,7 +71,7 @@ impl Sim {
             buf_rewards: vec![0.0; n],
             buf_scans: vec![0.0; n * (n_beams + 2)],
             buf_state: vec![0.0; n * 7],
-            buf_resets: vec![[0.0; 3]; n],
+            buf_resets: vec![0; n],
         }
     }
 
@@ -151,10 +151,7 @@ impl Sim {
         let dt = self.dt;
 
         for i in 0..n {
-            let ri = self.rng.random_range(0..n_wps);
-            let wp = self.map.ordered_skeleton[ri];
-            let nxt = self.map.ordered_skeleton[(ri + 1) % n_wps];
-            self.buf_resets[i] = [wp[0], wp[1], (nxt[1] - wp[1]).atan2(nxt[0] - wp[0])];
+            self.buf_resets[i] = self.rng.random_range(0..n_wps);
         }
 
         let map = &self.map;
@@ -202,20 +199,21 @@ impl Sim {
                     *reward = delta / n_wps as f64 * 100.0 - if *terminated { 100.0 } else { 0.0 };
 
                     if *terminated || *truncated {
+                        let ri = self.buf_resets[i];
+                        let wp = map.ordered_skeleton[ri];
+                        let nxt = map.ordered_skeleton[(ri + 1) % n_wps];
+                        let th = (nxt[1] - wp[1]).atan2(nxt[0] - wp[0]);
                         *step = 0;
                         *car = Car {
-                            x: reset[0],
-                            y: reset[1],
-                            theta: reset[2],
+                            x: wp[0],
+                            y: wp[1],
+                            theta: th,
                             velocity: 0.0,
                             steering: 0.0,
                             yaw_rate: 0.0,
                             slip_angle: 0.0,
                         };
-                        *wp_idx = map
-                            .skeleton_tree
-                            .nearest_one::<SquaredEuclidean>(&[car.x, car.y])
-                            .item;
+                        *wp_idx = ri;
                     }
 
                     let (sin_h, cos_h) = car.theta.sin_cos();
