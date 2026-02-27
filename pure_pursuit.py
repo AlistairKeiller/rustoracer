@@ -1,23 +1,24 @@
 import time
 
-import gymnasium as gym
 import numpy as np
 
-import rustoracerpy
+from rustoracerpy import RustoracerEnv
 
 LOOKAHEAD = 1.5
 WHEELBASE = 0.3302
-SPEED = 5.0
+STEER_FACTOR = 1 / 0.4189
+SPEED = -0.6
 
-env = gym.make("Rustoracer-v0", yaml="maps/berlin.yaml", render_mode="human")
+env = RustoracerEnv(yaml="maps/berlin.yaml", render_mode="human")
 obs, info = env.reset()
-env_unwrapped: rustoracerpy.RustoracerEnv = env.unwrapped  # type: ignore
-waypoints = env_unwrapped.skeleton
+waypoints = env.skeleton.reshape(-1, 2)
+
 
 try:
     while True:
         loop_start = time.perf_counter()
-        (x, y, theta, *_) = info["state"]
+
+        (x, y, theta, *_) = info["state"][0]
         pos = np.array([x, y])
 
         # Find lookahead point
@@ -34,16 +35,19 @@ try:
         local_y = -np.sin(theta) * dx + np.cos(theta) * dy
         L2 = dx * dx + dy * dy
         steer = (
-            float(np.clip(np.arctan(2.0 * local_y * WHEELBASE / L2), -0.4189, 0.4189))
+            float(
+                np.clip(np.arctan(2.0 * local_y * WHEELBASE / L2) * STEER_FACTOR, -1, 1)
+            )
             if L2 > 1e-12
             else 0.0
         )
 
-        obs, reward, terminated, truncated, info = env.step(np.array([steer, SPEED]))
+        obs, reward, terminated, truncated, info = env.step(np.array([[steer, SPEED]]))
         env.render()
         elapsed = time.perf_counter() - loop_start
-        time.sleep(max(0.0, 1.0 / 100.0 - elapsed))
-        if terminated or truncated:
+        time.sleep(max(0.0, 1.0 / 60.0 - elapsed))
+
+        if terminated[0] or truncated[0]:
             obs, info = env.reset()
 except KeyboardInterrupt:
     pass

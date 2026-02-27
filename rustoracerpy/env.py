@@ -7,6 +7,8 @@ from numpy.typing import NDArray
 from gymnasium.vector.utils import batch_space
 from rustoracerpy.rustoracer import PySim
 
+import rerun as rr
+
 
 class RustoracerEnv(gym.vector.VectorEnv):
     metadata: dict[str, list[str] | int] = {
@@ -38,6 +40,9 @@ class RustoracerEnv(gym.vector.VectorEnv):
         self.action_space = batch_space(single_act_space, num_envs)
 
         self.skeleton: NDArray[np.float64] = self._sim.skeleton
+
+        if render_mode == "human":
+            rr.init("simple_image_display", spawn=True)
 
     def reset(
         self,
@@ -76,6 +81,8 @@ class RustoracerEnv(gym.vector.VectorEnv):
     def render(self) -> NDArray[np.uint8] | None:
         if self.render_mode == "rgb_array":
             return self._sim.render()
+        elif self.render_mode == "human":
+            rr.log("camera/image", rr.Image(self._sim.render()))
         return None
 
     def close(self) -> None:
