@@ -87,6 +87,10 @@ class RustoracerEnv(gym.vector.VectorEnv):
                 rr.log(
                     "world/lidar", rr.LineStrips2D(np.stack([org_px, ends_px], axis=1))
                 )
+            car_px = self._sim.car_pixels().reshape(-1, 2)
+            rr.log(
+                "world/car", rr.Points2D(car_px, colors=[[43, 127, 255]], radii=[1.0])
+            )
         elif self.render_mode == "rgb_array":
             return self._sim.render()
 

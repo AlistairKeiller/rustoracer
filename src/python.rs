@@ -134,6 +134,21 @@ mod rustoracer {
             out.into_pyarray(py)
         }
 
+        fn car_pixels<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+            let out: Vec<f64> = self
+                .sim
+                .cars
+                .iter()
+                .flat_map(|car| {
+                    self.sim
+                        .map
+                        .car_pixels(car)
+                        .flat_map(|(px, py)| [px as f64, py as f64])
+                })
+                .collect();
+            out.into_pyarray(py)
+        }
+
         #[getter]
         fn skeleton<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
             let flat: Vec<f64> = self
