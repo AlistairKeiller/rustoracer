@@ -2,7 +2,7 @@ import gymnasium as gym
 import rustoracerpy
 
 # Initialise the environment
-env = gym.make("Rustoracer-v0", yaml="maps/berlin.yaml")
+env = gym.make_vec("Rustoracer-v0", num_envs=1, yaml="maps/berlin.yaml")
 
 # Reset the environment to generate the first observation
 observation, info = env.reset(seed=42)
