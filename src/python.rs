@@ -134,6 +134,22 @@ mod rustoracer {
             out.into_pyarray(py)
         }
 
+        fn edt_at<'py>(
+            &self,
+            py: Python<'py>,
+            xy: PyReadonlyArray1<f64>,
+        ) -> Bound<'py, PyArray1<f64>> {
+            let raw = xy.as_slice().unwrap();
+            let out: Vec<f64> = raw
+                .chunks(2)
+                .map(|p| {
+                    let (px, py) = self.sim.map.position_to_pixels(p[0], p[1]);
+                    self.sim.map.edt(px, py)
+                })
+                .collect();
+            out.into_pyarray(py)
+        }
+
         fn car_pixels<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
             let out: Vec<f64> = self
                 .sim
