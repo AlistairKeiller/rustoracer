@@ -91,6 +91,50 @@ mod rustoracer {
         }
 
         #[getter]
+        fn fov(&self) -> f64 {
+            self.sim.fov
+        }
+
+        fn world_to_pixels<'py>(
+            &self,
+            py: Python<'py>,
+            xy: PyReadonlyArray1<f64>,
+        ) -> Bound<'py, PyArray1<f64>> {
+            let raw = xy.as_slice().unwrap();
+            let h = self.sim.map.img.height();
+            let inv_res = 1.0 / self.sim.map.res;
+            let ox = self.sim.map.ox;
+            let oy = self.sim.map.oy;
+            let out: Vec<f64> = raw
+                .chunks(2)
+                .flat_map(|p| {
+                    [
+                        (p[0] - ox) * inv_res,
+                        (h - 1) as f64 - (p[1] - oy) * inv_res,
+                    ]
+                })
+                .collect();
+            out.into_pyarray(py)
+        }
+
+        fn pixels_to_world<'py>(
+            &self,
+            py: Python<'py>,
+            pxpy: PyReadonlyArray1<f64>,
+        ) -> Bound<'py, PyArray1<f64>> {
+            let raw = pxpy.as_slice().unwrap();
+            let h = self.sim.map.img.height();
+            let res = self.sim.map.res;
+            let ox = self.sim.map.ox;
+            let oy = self.sim.map.oy;
+            let out: Vec<f64> = raw
+                .chunks(2)
+                .flat_map(|p| [p[0] * res + ox, (h - 1) as f64 * res - p[1] * res + oy])
+                .collect();
+            out.into_pyarray(py)
+        }
+
+        #[getter]
         fn skeleton<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
             let flat: Vec<f64> = self
                 .sim
