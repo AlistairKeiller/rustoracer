@@ -1,4 +1,5 @@
 import time
+import threading
 
 import numpy as np
 import rerun as rr
@@ -20,6 +21,8 @@ RRT_GOAL_BIAS = 0.30
 CLEARANCE = 0.22
 EDGE_RES = 0.08
 
+OBS_RADIUS = 0.35
+
 env = RustoracerEnv(yaml="maps/berlin.yaml", render_mode="human")
 obs, info = env.reset()
 
@@ -33,6 +36,71 @@ forward_mask = np.abs(beam_angles) <= np.radians(60)
 
 prev_steer = 0.0
 rrt_path = None
+
+obstacles: list[np.ndarray] = []
+place_flag = threading.Event()
+clear_flag = threading.Event()
+
+
+def _input_listener():
+    """Background thread: press Enter to drop an obstacle, 'c' to clear all."""
+    while True:
+        try:
+            line = input()
+        except EOFError:
+            break
+        if line.strip().lower() == "c":
+            clear_flag.set()
+        else:
+            place_flag.set()
+
+
+threading.Thread(target=_input_listener, daemon=True).start()
+print("── Press ENTER to place an obstacle at the lookahead point ──")
+print("── Type 'c' + ENTER to clear all obstacles                 ──")
+
+
+def _log_obstacles():
+    """Send all obstacle circles to Rerun."""
+    if not obstacles:
+        rr.log("world/obstacles", rr.Clear(recursive=False))
+        return
+    centres_world = np.array(obstacles)  # (N, 2)
+    centres_px = env._sim.world_to_pixels(
+        centres_world.ravel().astype(np.float64)
+    ).reshape(-1, 2)
+    rr.log(
+        "world/obstacles",
+        rr.Points2D(
+            centres_px,
+            radii=[10.0] * len(centres_px),
+            colors=[[255, 50, 50, 200]] * len(centres_px),
+        ),
+    )
+
+
+def _hits_obstacle(pts: np.ndarray) -> bool:
+    """Return True if any point in pts (N,2) is inside an obstacle."""
+    for o in obstacles:
+        if np.any(np.linalg.norm(pts - o, axis=1) < OBS_RADIUS + CLEARANCE):
+            return True
+    return False
+
+
+def _edt_clear(pts):
+    flat = np.ascontiguousarray(pts.ravel(), dtype=np.float64)
+    if not bool(np.all(np.asarray(env._sim.edt_at(flat)) >= CLEARANCE)):
+        return False
+    return not _hits_obstacle(pts)
+
+
+def edge_free(a, b):
+    d = np.linalg.norm(b - a)
+    if d < 1e-9:
+        return _edt_clear(a.reshape(1, 2))
+    n = max(2, int(np.ceil(d / EDGE_RES)))
+    pts = np.column_stack([np.linspace(a[0], b[0], n), np.linspace(a[1], b[1], n)])
+    return _edt_clear(pts)
 
 
 def spline_goal(x, y):
@@ -53,20 +121,6 @@ def pure_pursuit(x, y, theta, gx, gy):
         return 0.0
     curvature = np.arctan(2.0 * local_y * WHEELBASE / L2) * STEER_FACTOR
     return float(np.clip(curvature, -1, 1))
-
-
-def _edt_clear(pts):
-    flat = np.ascontiguousarray(pts.ravel(), dtype=np.float64)
-    return bool(np.all(np.asarray(env._sim.edt_at(flat)) >= CLEARANCE))
-
-
-def edge_free(a, b):
-    d = np.linalg.norm(b - a)
-    if d < 1e-9:
-        return _edt_clear(a.reshape(1, 2))
-    n = max(2, int(np.ceil(d / EDGE_RES)))
-    pts = np.column_stack([np.linspace(a[0], b[0], n), np.linspace(a[1], b[1], n)])
-    return _edt_clear(pts)
 
 
 def _to_px(pt):
@@ -154,6 +208,28 @@ try:
         scans = obs[0, :N_BEAMS]
         cl = forward_clearance(scans)
         goal = spline_goal(x, y)
+
+        if place_flag.is_set():
+            place_flag.clear()
+            obstacles.append(goal.copy())
+            print(
+                f"  ✦ Obstacle placed at ({goal[0]:.2f}, {goal[1]:.2f})  "
+                f"[total: {len(obstacles)}]"
+            )
+
+        if clear_flag.is_set():
+            clear_flag.clear()
+            obstacles.clear()
+            rr.log("world/obstacles", rr.Clear(recursive=False))
+            print("  ✦ All obstacles cleared")
+
+        _log_obstacles()
+
+        goal_px = _to_px(goal)
+        rr.log(
+            "world/lookahead",
+            rr.Points2D(goal_px, radii=[5.0], colors=[[255, 200, 0, 160]]),
+        )
 
         result = rrt(pos, goal)
         if result and len(result) > 1:
