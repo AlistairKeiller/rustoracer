@@ -1,11 +1,13 @@
 import time
+
 import numpy as np
-from rustoracerpy import RustoracerEnv
 import rerun as rr
+
+from rustoracerpy import RustoracerEnv
 
 WHEELBASE = 0.3302
 STEER_FACTOR = 1.0 / 0.4189
-LOOKAHEAD = 1.5
+LOOKAHEAD = 3
 STEER_ALPHA = 0.35
 
 SPEED_FAST = -0.6
@@ -35,12 +37,12 @@ rrt_path = None
 
 def spline_goal(x, y):
     pos = np.array([x, y])
-    ni = int(np.argmin(np.linalg.norm(waypoints - pos, axis=1)))
+    nearest = int(np.argmin(np.linalg.norm(waypoints - pos, axis=1)))
     for j in range(1, n_wps):
-        idx = (ni + j) % n_wps
+        idx = (nearest + j) % n_wps
         if np.linalg.norm(waypoints[idx] - pos) >= LOOKAHEAD:
             return waypoints[idx]
-    return waypoints[(ni + 1) % n_wps]
+    return waypoints[(nearest + 1) % n_wps]
 
 
 def pure_pursuit(x, y, theta, gx, gy):
@@ -49,29 +51,26 @@ def pure_pursuit(x, y, theta, gx, gy):
     L2 = dx * dx + dy * dy
     if L2 < 1e-12:
         return 0.0
-    return float(
-        np.clip(np.arctan(2.0 * local_y * WHEELBASE / L2) * STEER_FACTOR, -1, 1)
-    )
+    curvature = np.arctan(2.0 * local_y * WHEELBASE / L2) * STEER_FACTOR
+    return float(np.clip(curvature, -1, 1))
 
 
-def points_free(pts):
+def _edt_clear(pts):
     flat = np.ascontiguousarray(pts.ravel(), dtype=np.float64)
-    dists = np.asarray(env._sim.edt_at(flat))
-    return bool(np.all(dists >= CLEARANCE))
+    return bool(np.all(np.asarray(env._sim.edt_at(flat)) >= CLEARANCE))
 
 
 def edge_free(a, b):
     d = np.linalg.norm(b - a)
     if d < 1e-9:
-        return points_free(a.reshape(1, 2))
+        return _edt_clear(a.reshape(1, 2))
     n = max(2, int(np.ceil(d / EDGE_RES)))
-    pts = np.column_stack(
-        [
-            np.linspace(a[0], b[0], n),
-            np.linspace(a[1], b[1], n),
-        ]
-    )
-    return points_free(pts)
+    pts = np.column_stack([np.linspace(a[0], b[0], n), np.linspace(a[1], b[1], n)])
+    return _edt_clear(pts)
+
+
+def _to_px(pt):
+    return env._sim.world_to_pixels(np.array(pt, dtype=np.float64)).reshape(-1, 2)
 
 
 def rrt(start, goal):
@@ -92,9 +91,7 @@ def rrt(start, goal):
             continue
         new = nodes[ni] + diff / d * min(d, RRT_STEP)
 
-        if not points_free(new.reshape(1, 2)):
-            continue
-        if not edge_free(nodes[ni], new):
+        if not _edt_clear(new.reshape(1, 2)) or not edge_free(nodes[ni], new):
             continue
 
         nodes.append(new)
@@ -107,17 +104,23 @@ def rrt(start, goal):
                 i = parents[i]
             path.reverse()
 
-            edges = []
-            for j in range(1, len(nodes)):
-                c_px = env._sim.world_to_pixels(
-                    np.array(nodes[j], dtype=np.float64)
-                ).reshape(-1, 2)
-                p_px = env._sim.world_to_pixels(
-                    np.array(nodes[parents[j]], dtype=np.float64)
-                ).reshape(-1, 2)
-                edges.append(np.vstack([p_px, c_px]))
+            edges = [
+                np.vstack([_to_px(nodes[parents[j]]), _to_px(nodes[j])])
+                for j in range(1, len(nodes))
+            ]
             if edges:
                 rr.log("world/RRT_graph", rr.LineStrips2D(edges))
+
+            path_px = [_to_px(p) for p in path]
+            if len(path_px) > 1:
+                segments = [
+                    np.vstack([path_px[k], path_px[k + 1]])
+                    for k in range(len(path_px) - 1)
+                ]
+                rr.log(
+                    "world/RRT_path",
+                    rr.LineStrips2D(segments, colors=[[0, 120, 255, 255]]),
+                )
 
             return path
     return None
@@ -138,9 +141,8 @@ def speed_for(clearance):
     if clearance <= 0.5:
         return SPEED_SLOW
     if clearance < BRAKE_DIST:
-        return SPEED_SLOW + (clearance - 0.5) / (BRAKE_DIST - 0.5) * (
-            SPEED_FAST - SPEED_SLOW
-        )
+        t = (clearance - 0.5) / (BRAKE_DIST - 0.5)
+        return SPEED_SLOW + t * (SPEED_FAST - SPEED_SLOW)
     return SPEED_FAST
 
 
