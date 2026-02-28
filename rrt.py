@@ -43,7 +43,6 @@ clear_flag = threading.Event()
 
 
 def _input_listener():
-    """Background thread: press Enter to drop an obstacle, 'c' to clear all."""
     while True:
         try:
             line = input()
@@ -80,7 +79,6 @@ def _log_obstacles():
 
 
 def _hits_obstacle(pts: np.ndarray) -> bool:
-    """Return True if any point in pts (N,2) is inside an obstacle."""
     for o in obstacles:
         if np.any(np.linalg.norm(pts - o, axis=1) < OBS_RADIUS + CLEARANCE):
             return True
