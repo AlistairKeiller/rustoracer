@@ -108,7 +108,9 @@ def spline_goal(x, y):
     nearest = int(np.argmin(np.linalg.norm(waypoints - pos, axis=1)))
     for j in range(1, n_wps):
         idx = (nearest + j) % n_wps
-        if np.linalg.norm(waypoints[idx] - pos) >= LOOKAHEAD:
+        if np.linalg.norm(waypoints[idx] - pos) >= LOOKAHEAD and _edt_clear(
+            np.array([waypoints[idx]])
+        ):
             return waypoints[idx]
     return waypoints[(nearest + 1) % n_wps]
 
@@ -201,6 +203,7 @@ def speed_for(clearance):
 
 
 try:
+    rng = np.random.default_rng()
     while True:
         t0 = time.perf_counter()
         x, y, theta, vel, *_ = info["state"][0]
@@ -211,7 +214,7 @@ try:
 
         if place_flag.is_set():
             place_flag.clear()
-            obstacles.append(goal.copy())
+            obstacles.append(goal.copy() + rng.random(size=(2)))
             print(
                 f"  ✦ Obstacle placed at ({goal[0]:.2f}, {goal[1]:.2f})  "
                 f"[total: {len(obstacles)}]"
