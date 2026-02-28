@@ -1,9 +1,3 @@
-"""
-Pure pursuit on skeleton spline + RRT local replan when obstacles block the path.
-RRT only fires when forward LiDAR detects a close obstacle; otherwise pure pursuit
-runs alone. A simple exponential filter on steering kills oscillation.
-"""
-
 import time
 import numpy as np
 from rustoracerpy import RustoracerEnv
@@ -12,17 +6,16 @@ import rerun as rr
 WHEELBASE = 0.3302
 STEER_FACTOR = 1.0 / 0.4189
 LOOKAHEAD = 1.5
-STEER_ALPHA = 0.35  # exponential smoothing (0=frozen, 1=instant)
+STEER_ALPHA = 0.35
 
 SPEED_FAST = -0.6
 SPEED_SLOW = -0.85
 BRAKE_DIST = 2.0
 
-RRT_TRIGGER = 1.5  # replan when forward clearance < this
 RRT_ITERS = 200
 RRT_STEP = 0.35
 RRT_GOAL_BIAS = 0.30
-CLEARANCE = 0.22  # car half-width + margin
+CLEARANCE = 0.22
 EDGE_RES = 0.08
 
 env = RustoracerEnv(yaml="maps/berlin.yaml", render_mode="human")
@@ -61,12 +54,24 @@ def pure_pursuit(x, y, theta, gx, gy):
     )
 
 
+def points_free(pts):
+    flat = np.ascontiguousarray(pts.ravel(), dtype=np.float64)
+    dists = np.asarray(env._sim.edt_at(flat))
+    return bool(np.all(dists >= CLEARANCE))
+
+
 def edge_free(a, b):
     d = np.linalg.norm(b - a)
     if d < 1e-9:
-        return True
-    pts = np.linspace(a, b, max(2, int(np.ceil(d / EDGE_RES))))
-    return bool(np.all(env._sim.edt_at(pts.ravel()) >= CLEARANCE))
+        return points_free(a.reshape(1, 2))
+    n = max(2, int(np.ceil(d / EDGE_RES)))
+    pts = np.column_stack(
+        [
+            np.linspace(a[0], b[0], n),
+            np.linspace(a[1], b[1], n),
+        ]
+    )
+    return points_free(pts)
 
 
 def rrt(start, goal):
@@ -86,6 +91,9 @@ def rrt(start, goal):
         if d < 1e-9:
             continue
         new = nodes[ni] + diff / d * min(d, RRT_STEP)
+
+        if not points_free(new.reshape(1, 2)):
+            continue
         if not edge_free(nodes[ni], new):
             continue
 
@@ -98,6 +106,19 @@ def rrt(start, goal):
                 path.append(nodes[i])
                 i = parents[i]
             path.reverse()
+
+            edges = []
+            for j in range(1, len(nodes)):
+                c_px = env._sim.world_to_pixels(
+                    np.array(nodes[j], dtype=np.float64)
+                ).reshape(-1, 2)
+                p_px = env._sim.world_to_pixels(
+                    np.array(nodes[parents[j]], dtype=np.float64)
+                ).reshape(-1, 2)
+                edges.append(np.vstack([p_px, c_px]))
+            if edges:
+                rr.log("world/RRT_graph", rr.LineStrips2D(edges))
+
             return path
     return None
 
@@ -132,12 +153,9 @@ try:
         cl = forward_clearance(scans)
         goal = spline_goal(x, y)
 
-        if cl < RRT_TRIGGER:
-            result = rrt(pos, goal)
-            if result and len(result) > 1:
-                rrt_path = result
-        else:
-            rrt_path = None
+        result = rrt(pos, goal)
+        if result and len(result) > 1:
+            rrt_path = result
 
         target = pick_target(rrt_path, pos) if rrt_path else goal
         raw_steer = pure_pursuit(x, y, theta, target[0], target[1])
